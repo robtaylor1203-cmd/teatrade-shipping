@@ -324,11 +324,17 @@
             color: #5f6368;
         }
         @media (max-width: 768px) {
+            .header-top-bar {
+                padding: 0 16px;
+            }
+            .header-logo {
+                margin-left: 4px;
+            }
+            /* Icon groups: JS controls display via inline styles.
+               Just adjust spacing + alignment here. */
             .user-actions {
-                display: flex !important;
                 gap: 12px;
                 align-items: center;
-                order: 10;
                 margin-left: auto;
             }
             /* Hide create-account icon on mobile */
@@ -1503,10 +1509,9 @@
             .legend-item { font-size: 0.7rem; gap: 6px; }
             .legend-dot { width: 10px; height: 10px; }
 
-            /* Export btn: moved to above legend */
+            /* Export btn: bottom-right, compact */
             .export-btn {
-                bottom: auto;
-                top: 12px;
+                bottom: 24px;
                 right: 12px;
                 padding: 10px 20px;
                 font-size: 0.8rem;
