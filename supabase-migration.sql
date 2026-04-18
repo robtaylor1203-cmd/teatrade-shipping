@@ -205,8 +205,7 @@ BEGIN
         NEW.id,
         'new_tracking',
         NEW.container_number || ' — New Tracking Request',
-        'A user has initiated tracking for container ' || NEW.container_number
-            || COALESCE(' (' || NEW.origin || ' → ' || NEW.destination || ')', '')
+        'New container tracking request for ' || NEW.container_number || '.'
     );
     RETURN NEW;
 END;
