@@ -326,22 +326,28 @@
         @media (max-width: 768px) {
             .user-actions {
                 display: flex !important;
-                gap: 0;
+                gap: 12px;
                 align-items: center;
                 order: 10;
                 margin-left: auto;
             }
+            /* Hide create-account icon on mobile */
+            #loggedOutActions a[title="Create Account"] {
+                display: none !important;
+            }
             .mobile-search-icon {
-                display: block !important;
-                order: 11;
-                margin-left: 12px;
+                display: none !important;
             }
             .mobile-menu-toggle {
-                display: block !important;
-                order: 12;
+                display: none !important;
             }
             .header-search-wrapper {
                 display: none !important;
+            }
+            .header-subdomain {
+                font-size: 9px;
+                padding: 2px 7px;
+                margin-left: 6px;
             }
         }
 
@@ -1373,30 +1379,143 @@
             transition: width 0.6s ease;
         }
 
+        /* ========== Mobile toggle tabs ========== */
+        .mobile-left-toggle {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            z-index: 1050;
+            width: 28px;
+            height: 56px;
+            background: #fff;
+            border: 1px solid var(--tt-border-light);
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+            align-items: center;
+            justify-content: center;
+            color: var(--tt-muted);
+            padding: 0;
+            transition: background 0.2s;
+        }
+        .mobile-left-toggle:hover { background: var(--tt-bg); }
+        .mobile-left-toggle svg { width: 16px; height: 16px; }
+
+        .mobile-detail-handle {
+            display: none;
+        }
+
         /* ========== Responsive ========== */
         @media (max-width: 900px) {
             .app-layout {
-                flex-direction: column;
-                height: auto;
+                position: relative;
+                height: calc(100vh - 100px);
             }
-            .left-panel {
-                width: 100%;
-                min-width: 0;
-                max-height: 50vh;
-                border-right: none;
-                border-bottom: 1px solid var(--tt-border-light);
-            }
+
+            /* Map fills entire viewport area */
             .right-panel {
-                min-height: 50vh;
+                position: absolute;
+                inset: 0;
+                z-index: 1;
             }
+
+            /* Left panel: overlay drawer from left */
+            .left-panel {
+                position: absolute;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 85vw;
+                max-width: 420px;
+                min-width: 0;
+                z-index: 1100;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+                box-shadow: 4px 0 16px rgba(0,0,0,0.12);
+                border-right: 1px solid var(--tt-border-light);
+            }
+            .left-panel.mobile-open {
+                transform: translateX(0);
+            }
+
+            /* Show left-panel toggle tab */
+            .mobile-left-toggle {
+                display: flex;
+                z-index: 1050;
+            }
+            .mobile-left-toggle.hidden-toggle {
+                display: none;
+            }
+
+            /* Backdrop overlay when left panel is open */
+            .mobile-backdrop {
+                display: none;
+                position: absolute;
+                inset: 0;
+                background: rgba(32, 33, 36, 0.4);
+                z-index: 1090;
+            }
+            .mobile-backdrop.active {
+                display: block;
+            }
+
+            /* Detail panel: slide up from bottom */
             .detail-panel {
-                width: 100%;
+                position: absolute;
+                top: auto;
+                right: 0;
+                bottom: 0;
+                left: 0;
+                width: 100% !important;
+                max-height: 70vh;
+                border-left: none;
+                border-top: 1px solid var(--tt-border-light);
+                border-radius: 16px 16px 0 0;
+                box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+                transform: translateY(100%) !important;
+                z-index: 1080;
+            }
+            .detail-panel.active {
+                transform: translateY(0) !important;
+            }
+
+            /* Drag handle at top of detail panel */
+            .mobile-detail-handle {
+                display: block;
+                width: 36px;
+                height: 4px;
+                background: #dadce0;
+                border-radius: 2px;
+                margin: 10px auto 0;
+            }
+
+            /* Legend: compact on mobile */
+            .map-legend {
+                bottom: 12px;
+                left: 12px;
+                padding: 10px 14px;
+            }
+            .legend-title { font-size: 0.65rem; margin-bottom: 6px; }
+            .legend-items { gap: 4px; }
+            .legend-item { font-size: 0.7rem; gap: 6px; }
+            .legend-dot { width: 10px; height: 10px; }
+
+            /* Export btn: moved to above legend */
+            .export-btn {
+                bottom: auto;
+                top: 12px;
+                right: 12px;
+                padding: 10px 20px;
+                font-size: 0.8rem;
             }
         }
+
         @media (max-width: 600px) {
             .header-top-bar { padding: 10px 16px; }
             .panel-section { padding: 16px; }
-            .app-layout { height: auto; min-height: calc(100vh - 100px); }
         }
 
         /* Loading spinner */
@@ -1664,8 +1783,16 @@
     <!-- ========== DASHBOARD ========== -->
     <div class="app-layout" id="appLayout">
 
+        <!-- Mobile backdrop (behind left panel drawer) -->
+        <div class="mobile-backdrop" id="mobileBackdrop" onclick="window.shippingApp.toggleMobileLeftPanel()"></div>
+
+        <!-- Mobile tab to open left panel -->
+        <button class="mobile-left-toggle" id="mobileLeftToggle" onclick="window.shippingApp.toggleMobileLeftPanel()" aria-label="Open panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+
         <!-- Left Panel -->
-        <div class="left-panel">
+        <div class="left-panel" id="leftPanel">
 
             <!-- Container Input -->
             <div class="panel-section">
@@ -1790,6 +1917,7 @@
 
             <!-- Detail Slide Panel -->
             <div class="detail-panel" id="detailPanel">
+                <div class="mobile-detail-handle"></div>
                 <div class="detail-header">
                     <div>
                         <div class="detail-container-num" id="detailContainerNum">---</div>

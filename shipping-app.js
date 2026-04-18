@@ -228,7 +228,7 @@ function plotShipments() {
         } else {
             const marker = L.marker([s.lat, s.lng], { icon: createMarkerIcon(s.status) });
             marker.bindPopup(() => buildPopupHTML(s), { closeButton: false, maxWidth: 240 });
-            marker.on('click', () => openDetailPanel(s));
+            marker.on('click', () => { if (isMobile()) closeMobileLeftPanel(); openDetailPanel(s); });
             marker.addTo(map);
             markers[id] = marker;
         }
@@ -462,6 +462,7 @@ function renderShipmentList() {
             </div>`;
 
         card.addEventListener('click', () => {
+            if (isMobile()) closeMobileLeftPanel();
             openDetailPanel(s);
             // Pan map to marker
             if (s.lat != null && s.lng != null && map) {
@@ -1264,16 +1265,51 @@ function exportData() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   MOBILE PANEL TOGGLES
+   ══════════════════════════════════════════════════════════════════ */
+
+function isMobile() {
+    return window.innerWidth <= 900;
+}
+
+function toggleMobileLeftPanel() {
+    const panel = document.getElementById('leftPanel');
+    const backdrop = document.getElementById('mobileBackdrop');
+    const toggleBtn = document.getElementById('mobileLeftToggle');
+    if (!panel) return;
+    const isOpen = panel.classList.toggle('mobile-open');
+    if (backdrop) backdrop.classList.toggle('active', isOpen);
+    if (toggleBtn) toggleBtn.classList.toggle('hidden-toggle', isOpen);
+}
+
+function closeMobileLeftPanel() {
+    const panel = document.getElementById('leftPanel');
+    const backdrop = document.getElementById('mobileBackdrop');
+    const toggleBtn = document.getElementById('mobileLeftToggle');
+    if (panel) panel.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.remove('active');
+    if (toggleBtn) toggleBtn.classList.remove('hidden-toggle');
+}
+
+// Override openDetailPanel to close left panel on mobile
+const _origOpenDetailPanel = openDetailPanel;
+function mobileAwareOpenDetailPanel(s, scrollToAnalytics) {
+    if (isMobile()) closeMobileLeftPanel();
+    _origOpenDetailPanel(s, scrollToAnalytics);
+}
+
+/* ══════════════════════════════════════════════════════════════════
    PUBLIC API (for inline onclick handlers)
    ══════════════════════════════════════════════════════════════════ */
 
 window.shippingApp = {
     toggleAuthMode,
     signOut,
-    openDetailPanel,
+    openDetailPanel: mobileAwareOpenDetailPanel,
     closeDetailPanel,
     getShipmentById,
     toggleNotifPanel,
     exportData,
-    deleteShipment
+    deleteShipment,
+    toggleMobileLeftPanel
 };
