@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>TeaTrade — Estate Owner Outreach Email</title>
+<style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f0f0; color: #202124; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+        position: sticky; top: 0; z-index: 100;
+        background: #202124; color: #fff; padding: 16px 24px;
+        display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    }
+    .toolbar h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; white-space: nowrap; }
+    .toolbar h1 span { color: #5f6368; font-weight: 400; }
+    .toolbar-field { display: flex; flex-direction: column; gap: 3px; }
+    .toolbar-field label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #9aa0a6; }
+    .toolbar-field input {
+        background: #303134; border: 1px solid #5f6368; border-radius: 6px;
+        color: #e8eaed; padding: 6px 12px; font-size: 13px; width: 220px;
+        outline: none; transition: border-color 0.2s;
+    }
+    .toolbar-field input:focus { border-color: #1a73e8; }
+    .toolbar-actions { margin-left: auto; display: flex; gap: 10px; }
+    .btn {
+        padding: 8px 20px; border: none; border-radius: 50px; font-size: 13px;
+        font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px;
+    }
+    .btn-send { background: #1a73e8; color: #fff; }
+    .btn-send:hover { background: #1558b0; box-shadow: 0 2px 8px rgba(26,115,232,0.4); }
+    .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-send.sent { background: #34a853; }
+
+    /* ── Preview area ── */
+    .preview-wrapper {
+        max-width: 640px; margin: 32px auto; padding: 0 16px 48px;
+    }
+    .preview-label {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+        color: #5f6368; margin-bottom: 12px; font-weight: 600;
+    }
+    .subject-preview {
+        background: #fff; border-radius: 8px 8px 0 0; padding: 14px 20px;
+        border-bottom: 1px solid #ebebeb; font-size: 13px; color: #5f6368;
+    }
+    .subject-preview strong { color: #202124; }
+    .email-frame {
+        background: #fff; border-radius: 0 0 8px 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+    .email-frame iframe {
+        width: 100%; height: 900px; border: none; display: block;
+    }
+
+    /* ── Toast notification ── */
+    .toast {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500;
+        color: #fff; z-index: 9999; opacity: 0; transition: opacity 0.3s;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #34a853; }
+    .toast.error { background: #d93025; }
+
+    /* ── Auth bar ── */
+    .auth-bar {
+        background: #fff3cd; color: #856404; text-align: center;
+        padding: 8px 16px; font-size: 13px; display: none;
+    }
+    .auth-bar a { color: #1a73e8; font-weight: 600; cursor: pointer; }
+    .auth-bar.authed { background: #d4edda; color: #155724; }
+</style>
+</head>
+<body>
+
+<div class="auth-bar" id="auth-bar">Sign in required to send emails. <a onclick="signIn()">Sign in with Google</a></div>
+<div id="toast" class="toast"></div>
+
+<div class="toolbar">
+    <h1>Tea<strong>Trade</strong> <span>Outreach Email</span></h1>
+    <div class="toolbar-field">
+        <label>Estate Name</label>
+        <input type="text" id="estate-name" value="Glenburn Tea Estate" oninput="updatePreview()">
+    </div>
+    <div class="toolbar-field">
+        <label>Profile URL</label>
+        <input type="text" id="profile-url" value="https://teatrade.co.uk/estates/india/darjeeling/glenburn-tea-estate.html" oninput="updatePreview()" style="width:360px;">
+    </div>
+    <div class="toolbar-field">
+        <label>Recipient Email</label>
+        <input type="email" id="recipient-email" placeholder="owner@estate.com" style="width:220px;">
+    </div>
+    <div class="toolbar-actions">
+        <button class="btn btn-send" onclick="sendEmail()" id="btn-send">&#9993; Send Email</button>
+    </div>
+</div>
+
+<div class="preview-wrapper">
+    <div class="preview-label">Email Preview</div>
+    <div class="subject-preview">
+        <strong>Subject:</strong> <span id="subject-display">Your estate has a profile on TeaTrade — claim it</span>
+    </div>
+    <div class="email-frame">
+        <iframe id="email-preview" title="Email preview"></iframe>
+    </div>
+</div>
+
+
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+const SUPABASE_URL = "https://kidwhcpxqeighhqcbhmt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpZHdoY3B4cWVpZ2hocWNiaG10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODEzNTgsImV4cCI6MjA5MTg1NzM1OH0.aaXJP9WxYXW4pFudz08mfeecQak9_M56CJlXWlUVtTY";
+const ADMIN_EMAILS = ['contact@teatrade.co.uk'];
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentSession = null;
+
+// ── Auth ──
+async function initAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+    handleSession(session);
+    supabase.auth.onAuthStateChange((_event, session) => handleSession(session));
+}
+
+function handleSession(session) {
+    currentSession = session;
+    const bar = document.getElementById('auth-bar');
+    const btn = document.getElementById('btn-send');
+    if (session && ADMIN_EMAILS.includes(session.user.email)) {
+        bar.className = 'auth-bar authed';
+        bar.style.display = 'block';
+        bar.textContent = `Signed in as ${session.user.email} ✓`;
+        btn.disabled = false;
+    } else if (session) {
+        bar.style.display = 'block';
+        bar.className = 'auth-bar';
+        bar.innerHTML = `Signed in as ${session.user.email} — admin access required to send.`;
+        btn.disabled = true;
+    } else {
+        bar.style.display = 'block';
+        bar.className = 'auth-bar';
+        bar.innerHTML = 'Sign in required to send emails. <a onclick="window._signIn()">Sign in with Google</a>';
+        btn.disabled = true;
+    }
+}
+
+window._signIn = async function() {
+    await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.href }
+    });
+};
+
+// ── Toast ──
+function showToast(msg, type = 'success') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `toast ${type} show`;
+    setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+// ── Send ──
+window.sendEmail = async function() {
+    const recipientEmail = document.getElementById('recipient-email').value.trim();
+    const estateName = document.getElementById('estate-name').value.trim();
+    if (!recipientEmail) { showToast('Please enter a recipient email address.', 'error'); return; }
+    if (!estateName) { showToast('Please enter an estate name.', 'error'); return; }
+    if (!currentSession) { showToast('Please sign in first.', 'error'); return; }
+
+    const btn = document.getElementById('btn-send');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/send-outreach-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentSession.access_token}`,
+                'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+                to: recipientEmail,
+                subject: getSubjectLine(),
+                html: getEmailHTML(),
+            }),
+        });
+        const result = await res.json();
+        console.log('Send response:', res.status, result);
+        if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+        btn.innerHTML = '&#10003; Sent!';
+        btn.classList.add('sent');
+        showToast(`Email sent to ${recipientEmail}`);
+        setTimeout(() => { btn.innerHTML = '&#9993; Send Email'; btn.classList.remove('sent'); btn.disabled = false; }, 3000);
+    } catch (err) {
+        showToast(err.message, 'error');
+        btn.innerHTML = '&#9993; Send Email';
+        btn.disabled = false;
+    }
+};
+
+// ── Expose globals for inline handlers ──
+window.updatePreview = updatePreview;
+function getEmailHTML() {
+    const name = document.getElementById('estate-name').value || '[Estate Name]';
+    const url = document.getElementById('profile-url').value || '#';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><\/head>
+<body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0f0;">
+<tr><td align="center" style="padding:32px 16px;">
+
+<!-- Container -->
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr>
+<td style="background:#ffffff;padding:28px 32px 20px;border-bottom:1px solid #ebebeb;text-align:center;">
+    <div style="font-size:28px;font-weight:500;color:#5f6368;letter-spacing:-0.5px;font-family:Arial,sans-serif;">Tea<span style="color:#202124;font-weight:700;">Trade<\/span><\/div>
+<\/td>
+<\/tr>
+
+<!-- Body -->
+<tr>
+<td style="padding:32px 32px 24px;">
+
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#202124;">Dear <strong>${escHTML(name)}<\/strong> Team,<\/p>
+
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#3c4043;">I'm writing from <strong>TeaTrade<\/strong> — an independent tea information platform reaching over <strong>12,000 visitors per month<\/strong> and growing, used by consumers, buyers, and enthusiasts around the world.<\/p>
+
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#3c4043;"><strong>${escHTML(name)}<\/strong> already has a profile on our platform, featuring geographical terroir data, microclimate forecasts, and regional context. You can view it here:<\/p>
+
+    <!-- Profile link card -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+    <tr><td style="background:#f8f9fa;border:1px solid #ebebeb;border-radius:8px;padding:16px 20px;">
+        <a href="${escHTML(url)}" style="color:#1a73e8;font-size:14px;font-weight:500;text-decoration:none;word-break:break-all;">${escHTML(url)}<\/a>
+    <\/td><\/tr>
+    <\/table>
+
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.7;color:#3c4043;">By <strong>claiming your profile<\/strong>, you unlock the ability to:<\/p>
+
+    <!-- Benefits list -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        <tr><td style="padding:8px 0;font-size:14px;line-height:1.6;color:#3c4043;">
+            <span style="display:inline-block;width:24px;color:#34a853;font-weight:700;font-size:16px;">&#10003;<\/span>
+            Add your <strong>estate logo, website link,<\/strong> and <strong>brand story<\/strong>
+        <\/td><\/tr>
+        <tr><td style="padding:8px 0;font-size:14px;line-height:1.6;color:#3c4043;">
+            <span style="display:inline-block;width:24px;color:#34a853;font-weight:700;font-size:16px;">&#10003;<\/span>
+            Display <strong>tea types, cultivar varieties,<\/strong> and <strong>harvest seasons<\/strong>
+        <\/td><\/tr>
+        <tr><td style="padding:8px 0;font-size:14px;line-height:1.6;color:#3c4043;">
+            <span style="display:inline-block;width:24px;color:#34a853;font-weight:700;font-size:16px;">&#10003;<\/span>
+            Publish <strong>certifications<\/strong> (Rainforest Alliance, ETP, ISO, etc.)
+        <\/td><\/tr>
+        <tr><td style="padding:8px 0;font-size:14px;line-height:1.6;color:#3c4043;">
+            <span style="display:inline-block;width:24px;color:#34a853;font-weight:700;font-size:16px;">&#10003;<\/span>
+            Share <strong>production data, gallery images,<\/strong> and <strong>trade channels<\/strong>
+        <\/td><\/tr>
+        <tr><td style="padding:8px 0;font-size:14px;line-height:1.6;color:#3c4043;">
+            <span style="display:inline-block;width:24px;color:#34a853;font-weight:700;font-size:16px;">&#10003;<\/span>
+            Receive a <strong style="color:#1a73e8;">Verified Estate<\/strong> badge visible to all visitors
+        <\/td><\/tr>
+    <\/table>
+
+    <p style="margin:0 0 6px;font-size:15px;line-height:1.7;color:#3c4043;">There's <strong>no cost<\/strong> — and it takes about five minutes.<\/p>
+
+    <!-- CTA Button -->
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+    <tr><td align="center" style="padding:28px 0 12px;">
+        <a href="https://teatrade.co.uk/directory-portal.html" target="_blank" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 44px;border-radius:50px;text-decoration:none;font-weight:600;font-size:15px;letter-spacing:0.3px;box-shadow:0 2px 8px rgba(26,115,232,0.35);">
+            Claim Your Profile
+        <\/a>
+    <\/td><\/tr>
+    <\/table>
+
+    <!-- Separator -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+    <tr><td style="border-top:1px solid #ebebeb;"><\/td><\/tr>
+    <\/table>
+
+    <!-- How it works -->
+    <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.8px;">How It Works<\/p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td width="32" valign="top" style="padding:6px 0;">
+                <div style="width:24px;height:24px;background:#e8f0fe;color:#1a73e8;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700;">1<\/div>
+            <\/td>
+            <td style="padding:6px 0 6px 10px;font-size:14px;line-height:1.6;color:#3c4043;">
+                <strong>Submit<\/strong> — Fill in your details through our portal (logo, story, tea types, etc.)
+            <\/td>
+        <\/tr>
+        <tr>
+            <td width="32" valign="top" style="padding:6px 0;">
+                <div style="width:24px;height:24px;background:#e8f0fe;color:#1a73e8;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700;">2<\/div>
+            <\/td>
+            <td style="padding:6px 0 6px 10px;font-size:14px;line-height:1.6;color:#3c4043;">
+                <strong>Review<\/strong> — We verify ownership and review your content within 48 hours
+            <\/td>
+        <\/tr>
+        <tr>
+            <td width="32" valign="top" style="padding:6px 0;">
+                <div style="width:24px;height:24px;background:#e6f4ea;color:#34a853;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700;">3<\/div>
+            <\/td>
+            <td style="padding:6px 0 6px 10px;font-size:14px;line-height:1.6;color:#3c4043;">
+                <strong>Live<\/strong> — Your enriched profile goes live with a Verified badge
+            <\/td>
+        <\/tr>
+    <\/table>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;">
+    <tr><td style="border-top:1px solid #ebebeb;"><\/td><\/tr>
+    <\/table>
+
+    <p style="margin:20px 0 0;font-size:15px;line-height:1.7;color:#3c4043;">If you have any questions, reply directly to this email — I'm happy to help.<\/p>
+
+    <p style="margin:20px 0 0;font-size:15px;line-height:1.7;color:#3c4043;">
+        Best regards,<br>
+        <strong>The TeaTrade Team<\/strong><br>
+        <a href="https://teatrade.co.uk" style="color:#1a73e8;text-decoration:none;font-size:14px;">teatrade.co.uk<\/a>
+    <\/p>
+
+<\/td>
+<\/tr>
+
+<!-- Footer -->
+<tr>
+<td style="padding:20px 32px;background:#f8f9fa;border-top:1px solid #ebebeb;text-align:center;">
+    <p style="margin:0 0 6px;color:#5f6368;font-size:12px;line-height:1.5;">
+        &copy; 2025 TeaTrade &middot; <a href="https://teatrade.co.uk" style="color:#1a73e8;text-decoration:none;">teatrade.co.uk<\/a>
+    <\/p>
+    <p style="margin:0;color:#999999;font-size:11px;line-height:1.5;">
+        You received this because ${escHTML(name)} has an unclaimed profile on TeaTrade.
+    <\/p>
+<\/td>
+<\/tr>
+
+<\/table>
+<!-- /Container -->
+
+<\/td><\/tr>
+<\/table>
+<\/body>
+<\/html>`;
+}
+
+function escHTML(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function getSubjectLine() {
+    const name = document.getElementById('estate-name').value || '[Estate Name]';
+    return `${name} — Your estate has a profile on TeaTrade`;
+}
+
+function updatePreview() {
+    const iframe = document.getElementById('email-preview');
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(getEmailHTML());
+    doc.close();
+    document.getElementById('subject-display').textContent = getSubjectLine();
+}
+
+// Initial render
+window.addEventListener('DOMContentLoaded', () => {
+    updatePreview();
+    initAuth();
+});
+</script>
+</body>
+</html>
