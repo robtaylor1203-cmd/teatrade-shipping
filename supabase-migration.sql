@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.shipping_notifications (
     user_id          uuid            NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     shipment_id      uuid            REFERENCES public.shipping_shipments(id) ON DELETE CASCADE,
     type             text            NOT NULL DEFAULT 'info'
-                                     CHECK (type IN ('status_change','eta_change','delay','arrival','info')),
+                                     CHECK (type IN ('status_change','eta_change','delay','arrival','info','new_tracking')),
     title            text            NOT NULL,
     message          text            NOT NULL,
     read             boolean         NOT NULL DEFAULT false,
@@ -195,6 +195,29 @@ CREATE TRIGGER shipping_notify_trigger
     FOR EACH ROW
     EXECUTE FUNCTION public.shipping_notify_on_change();
 
--- 10. Enable Realtime on the notifications table
+-- 10a. Notify admin when a new shipment is added
+CREATE OR REPLACE FUNCTION public.shipping_notify_new_tracking()
+RETURNS trigger AS $$
+BEGIN
+    INSERT INTO public.shipping_notifications (user_id, shipment_id, type, title, message)
+    VALUES (
+        NEW.user_id,
+        NEW.id,
+        'new_tracking',
+        NEW.container_number || ' — New Tracking Request',
+        'A user has initiated tracking for container ' || NEW.container_number
+            || COALESCE(' (' || NEW.origin || ' → ' || NEW.destination || ')', '')
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS shipping_notify_new_tracking_trigger ON public.shipping_shipments;
+CREATE TRIGGER shipping_notify_new_tracking_trigger
+    AFTER INSERT ON public.shipping_shipments
+    FOR EACH ROW
+    EXECUTE FUNCTION public.shipping_notify_new_tracking();
+
+-- 10b. Enable Realtime on the notifications table
 --     (safe to re-run — ignores if already added)
 ALTER PUBLICATION supabase_realtime ADD TABLE public.shipping_notifications;

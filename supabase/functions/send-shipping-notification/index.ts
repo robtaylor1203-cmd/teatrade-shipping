@@ -18,6 +18,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "TeaTrade Shipping <contact@teatrade.co.uk>";
+const ADMIN_EMAIL = "contact@teatrade.co.uk";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -74,7 +75,7 @@ serve(async (req: Request) => {
     }
 
     // Build branded email HTML
-    const emailHTML = buildEmailHTML({ type, title, message, shipment });
+    const emailHTML = buildEmailHTML({ type, title, message, shipment, userEmail });
 
     // Send via Resend
     const resendRes = await fetch("https://api.resend.com/emails", {
@@ -85,7 +86,7 @@ serve(async (req: Request) => {
       },
       body: JSON.stringify({
         from: FROM_EMAIL,
-        to: [userEmail],
+        to: type === "new_tracking" ? [ADMIN_EMAIL] : [userEmail],
         subject: `TeaTrade Shipping — ${title}`,
         html: emailHTML,
       }),
@@ -121,6 +122,7 @@ interface EmailData {
   title: string;
   message: string;
   shipment: any | null;
+  userEmail: string;
 }
 
 function esc(s: string): string {
@@ -133,11 +135,12 @@ function typeColor(type: string): { bg: string; fg: string; label: string } {
     case "arrival":       return { bg: "#e6f4ea", fg: "#137333", label: "Delivered" };
     case "eta_change":    return { bg: "#fef7e0", fg: "#b06000", label: "ETA Updated" };
     case "status_change": return { bg: "#e8f0fe", fg: "#1a73e8", label: "Status Update" };
+    case "new_tracking":  return { bg: "#e0f2f1", fg: "#00695c", label: "New Tracking Request" };
     default:              return { bg: "#f1f3f4", fg: "#5f6368", label: "Notification" };
   }
 }
 
-function buildEmailHTML({ type, title, message, shipment }: EmailData): string {
+function buildEmailHTML({ type, title, message, shipment, userEmail }: EmailData): string {
   const tc = typeColor(type);
   const eta = shipment?.eta
     ? new Date(shipment.eta).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
@@ -151,6 +154,7 @@ function buildEmailHTML({ type, title, message, shipment }: EmailData): string {
           <tr>
             <td style="font-size:12px;color:#5f6368;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;padding-bottom:8px;">Shipment Details</td>
           </tr>
+          ${type === "new_tracking" ? `<tr><td style="font-size:14px;color:#3c4043;padding-bottom:8px;">Submitted by: <strong>${esc(userEmail)}</strong></td></tr>` : ""}
           <tr>
             <td style="font-size:15px;font-weight:700;color:#202124;font-family:'Courier New',monospace;padding-bottom:6px;">${esc(shipment.container_number)}</td>
           </tr>

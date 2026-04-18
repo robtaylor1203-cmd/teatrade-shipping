@@ -725,6 +725,7 @@
         .notif-icon.eta_change { background: #fef7e0; color: #b06000; }
         .notif-icon.delay { background: #fce8e6; color: #c5221f; }
         .notif-icon.arrival { background: #e6f4ea; color: var(--tt-green-dark); }
+        .notif-icon.new_tracking { background: #e0f2f1; color: #00695c; }
         .notif-icon.info { background: var(--tt-bg-alt); color: var(--tt-muted); }
 
         .notif-icon svg { width: 16px; height: 16px; }
@@ -1220,6 +1221,39 @@
         }
         .detail-panel::-webkit-scrollbar-thumb:hover {
             background: rgba(26,115,232,0.55);
+        }
+
+        .btn-delete-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 28px;
+            background: rgba(197, 34, 31, 0.08);
+            color: #c5221f;
+            border: 1.5px solid rgba(197, 34, 31, 0.25);
+            border-radius: 50px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Roboto', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 0.2px;
+        }
+        .btn-delete-container:hover {
+            background: #c5221f;
+            color: #fff;
+            border-color: #c5221f;
+            box-shadow: 0 2px 8px rgba(197, 34, 31, 0.3);
+        }
+        .btn-delete-container:active {
+            background: #a31b19;
+            border-color: #a31b19;
+            transform: scale(0.97);
+        }
+        .detail-delete-section {
+            border-top: 1px solid var(--tt-border-light);
+            padding-top: 20px;
+            margin-top: 8px;
         }
 
         .detail-header {
@@ -1817,6 +1851,14 @@
                     <div class="detail-section" id="detailInsightsSection" style="display:none;">
                         <div class="detail-section-title">Route Insights</div>
                         <div id="detailInsights"></div>
+                    </div>
+
+                    <!-- Delete Container -->
+                    <div class="detail-section detail-delete-section">
+                        <button class="btn-delete-container" id="btnDeleteContainer" onclick="window.shippingApp.deleteShipment()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            Delete Container
+                        </button>
                     </div>
                 </div>
             </div>

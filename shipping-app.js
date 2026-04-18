@@ -481,6 +481,7 @@ function renderShipmentList() {
 
 function openDetailPanel(s, scrollToAnalytics) {
     if (!s) return;
+    currentDetailShipmentId = s.id;
 
     // Highlight card
     document.querySelectorAll('.shipment-card').forEach((c) => c.classList.remove('active'));
@@ -537,7 +538,33 @@ function openDetailPanel(s, scrollToAnalytics) {
 
 function closeDetailPanel() {
     detailPanel.classList.remove('active');
+    currentDetailShipmentId = null;
     document.querySelectorAll('.shipment-card').forEach((c) => c.classList.remove('active'));
+}
+
+async function deleteShipment() {
+    if (!currentDetailShipmentId) return;
+    const s = shipments.find((sh) => sh.id === currentDetailShipmentId);
+    if (!s) return;
+    if (!confirm(`Delete container ${s.container_number}? This cannot be undone.`)) return;
+
+    const { error } = await sb.from('shipping_shipments').delete().eq('id', s.id);
+    if (error) {
+        showToast(`Failed to delete: ${error.message}`, 'error');
+        return;
+    }
+
+    // Remove marker from map
+    if (markers[s.id]) {
+        map.removeLayer(markers[s.id]);
+        delete markers[s.id];
+    }
+
+    shipments = shipments.filter((sh) => sh.id !== s.id);
+    closeDetailPanel();
+    renderShipmentList();
+    updateAnalytics();
+    showToast(`${s.container_number} deleted`, 'success');
 }
 
 function computeProgress(s) {
@@ -991,12 +1018,14 @@ function getShipmentById(id) {
 let notifications = [];
 let notifPanelOpen = false;
 let notifChannel = null;
+let currentDetailShipmentId = null;
 
 const NOTIF_ICONS = {
     status_change: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>',
     eta_change:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
     delay:         '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
     arrival:       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    new_tracking:  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
     info:          '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
 
@@ -1245,5 +1274,6 @@ window.shippingApp = {
     closeDetailPanel,
     getShipmentById,
     toggleNotifPanel,
-    exportData
+    exportData,
+    deleteShipment
 };
