@@ -185,6 +185,7 @@ async function signOut() {
     renderNotifications();
     plotShipments();
     updateAuthUI();
+    loadDemoData();
 }
 
 function updateAuthUI() {
@@ -204,6 +205,7 @@ function updateAuthUI() {
 }
 
 function onUserLoggedIn(user) {
+    clearDemoData();
     currentUser = user;
     updateAuthUI();
     initMap();
@@ -231,6 +233,7 @@ sb.auth.onAuthStateChange((_event, session) => {
     } else {
         currentUser = null;
         updateAuthUI();
+        loadDemoData();
     }
 });
 
@@ -248,6 +251,7 @@ sb.auth.onAuthStateChange((_event, session) => {
         onUserLoggedIn(session.user);
     } else {
         updateAuthUI();
+        loadDemoData();
     }
 })();
 
@@ -611,6 +615,10 @@ function openDetailPanel(s, scrollToAnalytics) {
     } else {
         insightsSection.style.display = 'none';
     }
+
+    // Hide delete button in demo mode
+    const deleteSection = detailPanel.querySelector('.detail-delete-section');
+    if (deleteSection) deleteSection.style.display = isDemoMode ? 'none' : '';
 
     detailPanel.classList.add('active');
 
@@ -1350,6 +1358,133 @@ function exportData() {
     URL.revokeObjectURL(url);
 
     showToast('Shipment data exported successfully.');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   DEMO DATA — realistic shipments for signed-out visitors
+   Dates are computed relative to NOW so they never go stale.
+   ══════════════════════════════════════════════════════════════════ */
+
+let isDemoMode = false;
+
+function getDemoShipments() {
+    const now = Date.now();
+    const day = 86400000;
+
+    // Helper: date offset from now (positive = future, negative = past)
+    const d = (offset) => new Date(now + offset * day).toISOString();
+
+    return [
+        {
+            id: 'demo-1',
+            container_number: 'MSCU7294813',
+            status: 'moving',
+            origin: 'Mombasa',
+            destination: 'Felixstowe',
+            route_name: 'Mombasa → Felixstowe',
+            lat: 12.28,
+            lng: 47.15,
+            eta: d(14),
+            days_transit: 18,
+            created_at: d(-18),
+            updated_at: d(-0.25)
+        },
+        {
+            id: 'demo-2',
+            container_number: 'TGHU5018472',
+            status: 'transshipment',
+            origin: 'Colombo',
+            destination: 'London Gateway',
+            route_name: 'Colombo → London Gateway',
+            lat: 16.95,
+            lng: 54.00,
+            eta: d(11),
+            days_transit: 22,
+            created_at: d(-22),
+            updated_at: d(-0.5)
+        },
+        {
+            id: 'demo-3',
+            container_number: 'CMAU3846190',
+            status: 'moving',
+            origin: 'Shanghai',
+            destination: 'Felixstowe',
+            route_name: 'Shanghai → Felixstowe',
+            lat: 5.20,
+            lng: 73.80,
+            eta: d(9),
+            days_transit: 26,
+            created_at: d(-26),
+            updated_at: d(-0.3)
+        },
+        {
+            id: 'demo-4',
+            container_number: 'HLXU9037254',
+            status: 'delayed',
+            origin: 'Jakarta',
+            destination: 'Southampton',
+            route_name: 'Jakarta → Southampton',
+            lat: 1.26,
+            lng: 103.83,
+            eta: d(18),
+            days_transit: 32,
+            created_at: d(-32),
+            updated_at: d(-1)
+        },
+        {
+            id: 'demo-5',
+            container_number: 'OOLU6172038',
+            status: 'delivered',
+            origin: 'Mombasa',
+            destination: 'Felixstowe',
+            route_name: 'Mombasa → Felixstowe',
+            lat: 51.96,
+            lng: 1.35,
+            eta: d(-3),
+            days_transit: 25,
+            created_at: d(-28),
+            updated_at: d(-3)
+        },
+        {
+            id: 'demo-6',
+            container_number: 'EGLV4289516',
+            status: 'moving',
+            origin: 'Colombo',
+            destination: 'Felixstowe',
+            route_name: 'Colombo → Felixstowe',
+            lat: -1.30,
+            lng: 36.80,
+            eta: d(20),
+            days_transit: 19,
+            created_at: d(-5),
+            updated_at: d(-0.4)
+        }
+    ];
+}
+
+function loadDemoData() {
+    isDemoMode = true;
+    shipments = getDemoShipments();
+    renderShipmentList();
+    plotShipments();
+    updateChart();
+    updateAnalytics();
+}
+
+function clearDemoData() {
+    if (!isDemoMode) return;
+    isDemoMode = false;
+    shipments = [];
+    // Remove demo markers from map
+    Object.keys(markers).forEach((id) => {
+        if (id.startsWith('demo-')) {
+            map.removeLayer(markers[id]);
+            delete markers[id];
+        }
+    });
+    renderShipmentList();
+    updateChart();
+    updateAnalytics();
 }
 
 /* ══════════════════════════════════════════════════════════════════
