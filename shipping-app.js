@@ -52,7 +52,84 @@ function toggleAuthMode() {
     authSwitchText.textContent = isSignUp ? 'Already have an account?' : 'No account?';
     authSwitchLink.textContent = isSignUp ? 'Sign in' : 'Create one';
     authError.textContent = '';
+    // Hide forgot link when in sign-up mode
+    const forgotWrap = $('#authForgotWrap');
+    if (forgotWrap) forgotWrap.style.display = isSignUp ? 'none' : '';
 }
+
+function showForgotPassword() {
+    $('#authOverlay').classList.add('hidden');
+    const overlay = $('#resetOverlay');
+    overlay.classList.remove('hidden');
+    // Ensure we show the email form, not the password form
+    $('#resetEmailForm').style.display = '';
+    $('#resetPasswordForm').style.display = 'none';
+    $('#resetTitle').textContent = 'Reset your password';
+    $('#resetDesc').textContent = "Enter your email and we'll send you a reset link.";
+    $('#resetError').textContent = '';
+    $('#resetPwError').textContent = '';
+}
+
+// Send password reset email
+$('#resetEmailForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#resetEmail').value.trim();
+    if (!email) return;
+
+    const btn = $('#resetEmailBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    $('#resetError').textContent = '';
+
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo: 'https://shipping.teatrade.co.uk/'
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Send Reset Link';
+
+    if (error) {
+        $('#resetError').textContent = error.message;
+    } else {
+        $('#resetError').style.color = 'var(--tt-green-dark)';
+        $('#resetError').textContent = 'Check your inbox for the reset link.';
+        btn.textContent = 'Email Sent';
+        btn.disabled = true;
+    }
+});
+
+// Set new password
+$('#resetPasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = $('#newPassword').value;
+    const confirm = $('#confirmPassword').value;
+    const errEl = $('#resetPwError');
+
+    if (pw !== confirm) {
+        errEl.textContent = 'Passwords do not match.';
+        return;
+    }
+
+    const btn = $('#resetPwBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    errEl.textContent = '';
+
+    const { error } = await sb.auth.updateUser({ password: pw });
+
+    btn.disabled = false;
+    btn.textContent = 'Update Password';
+
+    if (error) {
+        errEl.textContent = error.message;
+    } else {
+        errEl.style.color = 'var(--tt-green-dark)';
+        errEl.textContent = 'Password updated! Redirecting...';
+        setTimeout(() => {
+            $('#resetOverlay').classList.add('hidden');
+        }, 1500);
+    }
+});
 
 authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -138,6 +215,17 @@ function onUserLoggedIn(user) {
 
 /* Listen for auth state changes */
 sb.auth.onAuthStateChange((_event, session) => {
+    if (_event === 'PASSWORD_RECOVERY') {
+        // User clicked reset link in email — show the new password form
+        const overlay = $('#resetOverlay');
+        overlay.classList.remove('hidden');
+        $('#authOverlay').classList.add('hidden');
+        $('#resetEmailForm').style.display = 'none';
+        $('#resetPasswordForm').style.display = '';
+        $('#resetTitle').textContent = 'Set a new password';
+        $('#resetDesc').textContent = 'Enter your new password below.';
+        return;
+    }
     if (session?.user) {
         onUserLoggedIn(session.user);
     } else {
@@ -1304,6 +1392,7 @@ function mobileAwareOpenDetailPanel(s, scrollToAnalytics) {
 
 window.shippingApp = {
     toggleAuthMode,
+    showForgotPassword,
     signOut,
     openDetailPanel: mobileAwareOpenDetailPanel,
     closeDetailPanel,
