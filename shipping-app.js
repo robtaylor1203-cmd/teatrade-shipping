@@ -176,6 +176,7 @@ authForm.addEventListener('submit', async (e) => {
 });
 
 async function signOut() {
+    stopAutoRefresh();
     if (notifChannel) { sb.removeChannel(notifChannel); notifChannel = null; }
     await sb.auth.signOut();
     currentUser = null;
@@ -204,15 +205,18 @@ function updateAuthUI() {
     }
 }
 
-function onUserLoggedIn(user) {
+async function onUserLoggedIn(user) {
     clearDemoData();
     currentUser = user;
     updateAuthUI();
     initMap();
     initChart();
-    loadShipments();
+    await loadShipments();
     loadNotifications();
     subscribeToNotifications();
+    // Start live tracking: immediate background refresh + periodic polling
+    refreshAllShipments();
+    startAutoRefresh();
 }
 
 /* Listen for auth state changes */
@@ -480,8 +484,10 @@ async function submitContainers(containers) {
 
         containerInput.value = '';
         containerCount.textContent = '0 containers';
-        showToast('Containers received. Initializing satellite tracking…');
+        showToast('Containers received. Fetching live tracking data…');
         await loadShipments();
+        // Fetch live data for newly submitted containers in the background
+        refreshAllShipments();
     } catch (err) {
         showToast('Network error. Please try again.', true);
     } finally {
@@ -1358,6 +1364,175 @@ function exportData() {
     URL.revokeObjectURL(url);
 
     showToast('Shipment data exported successfully.');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LIVE TRACKING — TimeToCargo API via Edge Function
+   ══════════════════════════════════════════════════════════════════ */
+
+const TRACK_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/track-container`;
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const REQUEST_GAP_MS = 8000; // 8s between API calls (rate limit: 8 req/min)
+let refreshTimer = null;
+
+async function fetchTrackingData(containerNumber) {
+    const res = await fetch(TRACK_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ container_number: containerNumber })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Tracking API error ${res.status}`);
+    }
+    return res.json();
+}
+
+async function refreshShipment(s) {
+    if (s.status === 'delivered') return null;
+
+    try {
+        const data = await fetchTrackingData(s.container_number);
+        if (!data || (!data.status && data.lat == null)) return null;
+
+        // Build update object — only include fields that actually changed
+        const updates = {};
+        let statusChanged = false;
+        let etaChanged = false;
+
+        if (data.status && data.status !== s.status) {
+            updates.status = data.status;
+            statusChanged = true;
+        }
+        if (data.lat != null && data.lat !== s.lat) {
+            updates.lat = data.lat;
+        }
+        if (data.lng != null && data.lng !== s.lng) {
+            updates.lng = data.lng;
+        }
+        if (data.eta && data.eta !== s.eta) {
+            updates.eta = data.eta;
+            etaChanged = true;
+        }
+        if (data.origin && !s.origin) {
+            updates.origin = data.origin;
+        }
+        if (data.destination && !s.destination) {
+            updates.destination = data.destination;
+        }
+        if (data.origin && data.destination && !s.route_name) {
+            updates.route_name = `${data.origin} → ${data.destination}`;
+        }
+        // Compute days_transit from POL to now (or ETA)
+        if (data.eta && data.origin) {
+            const etaDate = new Date(data.eta);
+            const now = new Date();
+            const refDate = data.status === 'delivered' ? etaDate : now;
+            // Find created_at as rough departure proxy
+            const departed = new Date(s.created_at);
+            const days = Math.max(0, Math.round((refDate - departed) / 86400000));
+            if (days !== s.days_transit) {
+                updates.days_transit = days;
+            }
+        }
+
+        // Nothing changed — skip DB write
+        if (Object.keys(updates).length === 0) return null;
+
+        // Write to DB — the BEFORE UPDATE trigger saves old data to shipment_history
+        updates.updated_at = new Date().toISOString();
+        const { error } = await sb
+            .from('shipping_shipments')
+            .update(updates)
+            .eq('id', s.id);
+
+        if (error) {
+            console.error(`Failed to update ${s.container_number}:`, error.message);
+            return null;
+        }
+
+        // Create notification for status or ETA changes (triggers email webhook)
+        if (statusChanged || etaChanged) {
+            const notif = buildTrackingNotification(s, data, statusChanged, etaChanged);
+            await sb.from('shipping_notifications').insert(notif);
+        }
+
+        return updates;
+    } catch (err) {
+        console.error(`Tracking error for ${s.container_number}:`, err.message);
+        return null;
+    }
+}
+
+function buildTrackingNotification(shipment, newData, statusChanged, etaChanged) {
+    let type = 'status_change';
+    let title = '';
+    let message = '';
+
+    if (statusChanged && newData.status === 'delayed') {
+        type = 'delay';
+        title = `${shipment.container_number} — Delay Detected`;
+        message = `Container status changed to delayed. ${newData.eta ? 'New ETA: ' + new Date(newData.eta).toLocaleDateString('en-GB') : 'ETA pending.'}`;
+    } else if (statusChanged && newData.status === 'delivered') {
+        type = 'arrival';
+        title = `${shipment.container_number} — Delivered`;
+        message = `Container has arrived at ${newData.destination || 'destination'}.`;
+    } else if (statusChanged) {
+        type = 'status_change';
+        title = `${shipment.container_number} — Status Update`;
+        message = `Status changed from ${formatStatus(shipment.status)} to ${formatStatus(newData.status)}.`;
+    } else if (etaChanged) {
+        type = 'eta_change';
+        title = `${shipment.container_number} — ETA Updated`;
+        const oldEta = shipment.eta ? new Date(shipment.eta).toLocaleDateString('en-GB') : 'TBC';
+        const newEta = new Date(newData.eta).toLocaleDateString('en-GB');
+        message = `ETA changed from ${oldEta} to ${newEta}.`;
+    }
+
+    return {
+        user_id: currentUser.id,
+        shipment_id: shipment.id,
+        type,
+        title,
+        message,
+        read: false
+    };
+}
+
+async function refreshAllShipments() {
+    if (!currentUser || !shipments.length) return;
+
+    const trackable = shipments.filter((s) => s.status !== 'delivered');
+    if (!trackable.length) return;
+
+    let updated = 0;
+
+    for (let i = 0; i < trackable.length; i++) {
+        const result = await refreshShipment(trackable[i]);
+        if (result) updated++;
+
+        // Stagger requests to stay under TimeToCargo's 8 req/min limit
+        if (i < trackable.length - 1) {
+            await new Promise((r) => setTimeout(r, REQUEST_GAP_MS));
+        }
+    }
+
+    if (updated > 0) {
+        await loadShipments(); // Re-render with fresh DB data
+        showToast(`${updated} shipment${updated > 1 ? 's' : ''} updated with live tracking data.`);
+    }
+}
+
+function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshTimer = setInterval(refreshAllShipments, REFRESH_INTERVAL_MS);
+}
+
+function stopAutoRefresh() {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════
