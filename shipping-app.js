@@ -1389,8 +1389,6 @@ async function fetchTrackingData(containerNumber) {
 }
 
 async function refreshShipment(s) {
-    if (s.status === 'delivered') return null;
-
     try {
         // Re-read the shipment from DB to get the latest state
         // (the server-side cron may have already updated it)
@@ -1401,11 +1399,8 @@ async function refreshShipment(s) {
             .single();
         const current = freshRow || s;
 
-        // If cron already marked it delivered, just sync locally
-        if (current.status === 'delivered') {
-            Object.assign(s, current);
-            return current;
-        }
+        // Sync local object with DB state first
+        Object.assign(s, current);
 
         const data = await fetchTrackingData(current.container_number);
         if (!data || (!data.status && data.lat == null)) return null;
@@ -1416,11 +1411,13 @@ async function refreshShipment(s) {
         if (data.status && data.status !== current.status) {
             updates.status = data.status;
         }
-        if (data.lat != null && data.lat !== current.lat) {
-            updates.lat = data.lat;
-        }
-        if (data.lng != null && data.lng !== current.lng) {
-            updates.lng = data.lng;
+        // Always accept coordinate updates (the edge function now computes
+        // smart positions — interpolated for in-transit, POD for delivered)
+        if (data.lat != null && data.lng != null) {
+            if (data.lat !== current.lat || data.lng !== current.lng) {
+                updates.lat = data.lat;
+                updates.lng = data.lng;
+            }
         }
         if (data.eta && data.eta !== current.eta) {
             updates.eta = data.eta;
@@ -1513,7 +1510,14 @@ function buildTrackingNotification(shipment, newData, statusChanged, etaChanged)
 async function refreshAllShipments() {
     if (!currentUser || !shipments.length) return;
 
-    const trackable = shipments.filter((s) => s.status !== 'delivered');
+    // Include non-delivered shipments for tracking, plus any delivered
+    // shipments whose coordinates look stale (not at their destination)
+    const trackable = shipments.filter((s) => {
+        if (s.status !== 'delivered') return true;
+        // If delivered but lat/lng hasn't been corrected yet, refresh once
+        if (s._positionCorrected) return false;
+        return true;
+    });
     if (!trackable.length) return;
 
     let updated = 0;
@@ -1521,6 +1525,10 @@ async function refreshAllShipments() {
     for (let i = 0; i < trackable.length; i++) {
         const result = await refreshShipment(trackable[i]);
         if (result) updated++;
+        // Mark delivered shipments so we don't re-fetch them every cycle
+        if (trackable[i].status === 'delivered') {
+            trackable[i]._positionCorrected = true;
+        }
 
         // Stagger requests to stay under TimeToCargo's 8 req/min limit
         if (i < trackable.length - 1) {

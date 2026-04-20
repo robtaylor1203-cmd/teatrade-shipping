@@ -99,11 +99,78 @@ async function fetchTrackingData(containerNumber: string) {
     (e: Record<string, unknown>) => e.vessel && e.vessel !== "LADEN"
   );
 
+  // ─── Smart coordinate resolution ─────────────────────────────
+  const eta = summary.pod?.date ?? null;
+  let lat: number | null = null;
+  let lng: number | null = null;
+
+  if (status === "delivered" && podLoc) {
+    lat = podLoc.lat;
+    lng = podLoc.lng;
+  } else if (status === "pending" && polLoc) {
+    lat = polLoc.lat;
+    lng = polLoc.lng;
+  } else if (status === "transshipment" && latestLoc) {
+    lat = latestLoc.lat;
+    lng = latestLoc.lng;
+  } else if (status === "moving" || status === "delayed") {
+    // Interpolate between last departure and destination
+    const departureEvent = events.find((e: Record<string, unknown>) =>
+      e.actual === true && (e.status_code === "DEP" || (e.status as string)?.includes("Depart"))
+    ) ?? events.find((e: Record<string, unknown>) => e.actual === true);
+
+    const departureLoc = departureEvent ? loc((departureEvent as Record<string, unknown>).location as number) : polLoc;
+    const arrivalLoc = podLoc;
+
+    if (departureLoc && arrivalLoc && (departureEvent as Record<string, unknown>)?.date && eta) {
+      const depDate = new Date((departureEvent as Record<string, unknown>).date as string).getTime();
+      const etaDate = new Date(eta).getTime();
+      const now = Date.now();
+      const totalMs = etaDate - depDate;
+      const elapsedMs = now - depDate;
+
+      if (totalMs > 0) {
+        const progress = Math.max(0.02, Math.min(0.98, elapsedMs / totalMs));
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const toDeg = (rad: number) => (rad * 180) / Math.PI;
+        const lat1 = toRad(departureLoc.lat);
+        const lng1 = toRad(departureLoc.lng);
+        const lat2 = toRad(arrivalLoc.lat);
+        const lng2 = toRad(arrivalLoc.lng);
+        const d2 = 2 * Math.asin(Math.sqrt(
+          Math.pow(Math.sin((lat2 - lat1) / 2), 2) +
+          Math.cos(lat1) * Math.cos(lat2) * Math.pow(Math.sin((lng2 - lng1) / 2), 2)
+        ));
+        if (d2 > 0.001) {
+          const a = Math.sin((1 - progress) * d2) / Math.sin(d2);
+          const b = Math.sin(progress * d2) / Math.sin(d2);
+          const x = a * Math.cos(lat1) * Math.cos(lng1) + b * Math.cos(lat2) * Math.cos(lng2);
+          const y = a * Math.cos(lat1) * Math.sin(lng1) + b * Math.cos(lat2) * Math.sin(lng2);
+          const z = a * Math.sin(lat1) + b * Math.sin(lat2);
+          lat = Number(toDeg(Math.atan2(z, Math.sqrt(x * x + y * y))).toFixed(4));
+          lng = Number(toDeg(Math.atan2(y, x)).toFixed(4));
+        } else {
+          lat = departureLoc.lat;
+          lng = departureLoc.lng;
+        }
+      } else {
+        lat = departureLoc?.lat ?? latestLoc?.lat ?? null;
+        lng = departureLoc?.lng ?? latestLoc?.lng ?? null;
+      }
+    } else {
+      lat = latestLoc?.lat ?? null;
+      lng = latestLoc?.lng ?? null;
+    }
+  } else {
+    lat = latestLoc?.lat ?? null;
+    lng = latestLoc?.lng ?? null;
+  }
+
   return {
     status,
-    lat: latestLoc?.lat ?? null,
-    lng: latestLoc?.lng ?? null,
-    eta: summary.pod?.date ?? null,
+    lat,
+    lng,
+    eta,
     origin: polLoc?.name ?? null,
     destination: podLoc?.name ?? null,
     vessel: (vesselEvent?.vessel as string) ?? null,
