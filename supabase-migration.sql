@@ -288,7 +288,7 @@ BEGIN
          OLD.origin, OLD.destination, OLD.days_transit, 'update');
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET row_security = off;
 
 DROP TRIGGER IF EXISTS shipping_save_history_trigger ON public.shipping_shipments;
 CREATE TRIGGER shipping_save_history_trigger
@@ -307,7 +307,7 @@ BEGIN
          NEW.origin, NEW.destination, NEW.days_transit, 'initial');
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET row_security = off;
 
 DROP TRIGGER IF EXISTS shipping_save_initial_history_trigger ON public.shipping_shipments;
 CREATE TRIGGER shipping_save_initial_history_trigger
