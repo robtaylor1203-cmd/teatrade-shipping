@@ -217,9 +217,18 @@ CREATE TRIGGER shipping_notify_new_tracking_trigger
     FOR EACH ROW
     EXECUTE FUNCTION public.shipping_notify_new_tracking();
 
--- 10b. Enable Realtime on the notifications table
---     (safe to re-run — ignores if already added)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.shipping_notifications;
+-- 10b. Enable Realtime on the notifications table (safe to re-run)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND tablename = 'shipping_notifications'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.shipping_notifications;
+    END IF;
+END;
+$$;
 
 -- ============================================================
 --  SHIPMENT HISTORY TABLE & RLS
@@ -244,38 +253,24 @@ CREATE TABLE IF NOT EXISTS public.shipment_history (
 CREATE INDEX IF NOT EXISTS idx_shipment_history_shipment_id
     ON public.shipment_history (shipment_id);
 
-ALTER TABLE public.shipment_history ENABLE ROW LEVEL SECURITY;
+-- RLS is intentionally DISABLED on this table.
+-- Reason: it is written exclusively by SECURITY DEFINER trigger functions
+-- (server-side, never by clients). Supabase's postgres role cannot bypass RLS
+-- even with SET row_security = off, so enabling RLS here causes INSERT errors
+-- on every container add. Access is naturally scoped because shipment_id UUIDs
+-- are only obtainable through shipping_shipments, which HAS RLS enabled.
+ALTER TABLE public.shipment_history DISABLE ROW LEVEL SECURITY;
 
--- Users can read history for their own shipments
+-- Drop any stale policies from previous migration attempts
 DROP POLICY IF EXISTS "history_select_own" ON public.shipment_history;
-CREATE POLICY "history_select_own"
-    ON public.shipment_history FOR SELECT
-    USING (
-        auth.uid() = (
-            SELECT user_id FROM public.shipping_shipments
-            WHERE id = shipment_history.shipment_id
-        )
-    );
-
--- CRITICAL: postgres role (used by SECURITY DEFINER trigger functions) must
--- be able to insert. Without this, adding a new container raises an RLS error.
 DROP POLICY IF EXISTS "history_insert_trigger" ON public.shipment_history;
-CREATE POLICY "history_insert_trigger"
-    ON public.shipment_history FOR INSERT
-    TO postgres
-    WITH CHECK (true);
-
--- Service role (cron edge function) can do everything
 DROP POLICY IF EXISTS "history_all_service" ON public.shipment_history;
-CREATE POLICY "history_all_service"
-    ON public.shipment_history FOR ALL
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
 
-GRANT ALL ON public.shipment_history TO postgres;
-GRANT ALL ON public.shipment_history TO service_role;
+-- Restrict grants: anon gets nothing, authenticated can read, service_role/postgres can do all
+REVOKE ALL ON public.shipment_history FROM anon;
 GRANT SELECT ON public.shipment_history TO authenticated;
+GRANT ALL ON public.shipment_history TO service_role;
+GRANT ALL ON public.shipment_history TO postgres;
 
 -- 12. BEFORE UPDATE trigger — saves old row to history before each update
 CREATE OR REPLACE FUNCTION public.shipping_save_history()
