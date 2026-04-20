@@ -318,13 +318,26 @@ function plotShipments() {
 
         const id = String(s.id);
 
+        // Click handler always looks up the live object from the shipments array
+        // so both card clicks and dot clicks always use the same fresh data source
+        const clickHandler = () => {
+            const live = shipments.find((sh) => sh.id === s.id) || s;
+            if (isMobile()) closeMobileLeftPanel();
+            openDetailPanel(live);
+        };
+
         if (markers[id]) {
             markers[id].setLatLng([s.lat, s.lng]);
             markers[id].setIcon(createMarkerIcon(s.status));
+            // Rebind click handler so it always captures the latest shipment state
+            markers[id].off('click').on('click', clickHandler);
         } else {
             const marker = L.marker([s.lat, s.lng], { icon: createMarkerIcon(s.status) });
-            marker.bindPopup(() => buildPopupHTML(s), { closeButton: false, maxWidth: 240 });
-            marker.on('click', () => { if (isMobile()) closeMobileLeftPanel(); openDetailPanel(s); });
+            marker.bindPopup(() => {
+                const live = shipments.find((sh) => sh.id === s.id) || s;
+                return buildPopupHTML(live);
+            }, { closeButton: false, maxWidth: 240 });
+            marker.on('click', clickHandler);
             marker.addTo(map);
             markers[id] = marker;
         }
@@ -602,12 +615,39 @@ function openDetailPanel(s, scrollToAnalytics) {
     badge.className = `detail-status-badge ${s.status}`;
     badge.querySelector('span').textContent = formatStatus(s.status);
 
+    // Detect containers where tracking data could not be resolved
+    const hasNoData = !s.origin && !s.destination && s.lat == null && s.status === 'pending';
+
     $('#detailOrigin').textContent      = s.origin || '—';
     $('#detailDestination').textContent  = s.destination || '—';
     $('#detailTransitDays').textContent  = s.days_transit != null ? `${s.days_transit} days` : '—';
     $('#detailEta').textContent          = s.eta ? formatDate(s.eta) : '—';
     $('#detailCoords').textContent       = (s.lat != null && s.lng != null) ? `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}` : '—';
-    $('#detailUpdated').textContent      = s.updated_at ? timeAgo(s.updated_at) : '—';
+    $('#detailUpdated').textContent      = s.updated_at ? timeAgo(s.updated_at) : 'Just added';
+
+    // Show a notice when the container has not been found in the tracking system
+    let trackingNotice = $('#detailTrackingNotice');
+    if (!trackingNotice) {
+        trackingNotice = document.createElement('div');
+        trackingNotice.id = 'detailTrackingNotice';
+        trackingNotice.style.cssText = 'margin:0 0 12px;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.5;';
+        // Insert after the transit progress section, before insights
+        const insightsSection = $('#detailInsightsSection');
+        insightsSection.parentNode.insertBefore(trackingNotice, insightsSection);
+    }
+    if (s._trackingUnavailable) {
+        trackingNotice.style.display = '';
+        trackingNotice.style.background = '#fef7e0';
+        trackingNotice.style.color = '#b06000';
+        trackingNotice.innerHTML = '⚠️ <strong>Container not found in tracking system.</strong> Verify the container number is correct. Auto-retry will occur on next refresh cycle.';
+    } else if (hasNoData) {
+        trackingNotice.style.display = '';
+        trackingNotice.style.background = '#e8f0fe';
+        trackingNotice.style.color = '#1557b0';
+        trackingNotice.innerHTML = '🔄 <strong>Awaiting live tracking data.</strong> Position and route details will appear once the carrier reports the first vessel event.';
+    } else {
+        trackingNotice.style.display = 'none';
+    }
 
     // Progress bar
     const progressPct = computeProgress(s);
@@ -1411,7 +1451,18 @@ async function refreshShipment(s) {
         // Sync local object with DB state first
         Object.assign(s, current);
 
-        const data = await fetchTrackingData(current.container_number);
+        let data;
+        try {
+            data = await fetchTrackingData(current.container_number);
+        } catch (fetchErr) {
+            // 404 = container not found in tracking system
+            if (fetchErr.message && fetchErr.message.includes('404')) {
+                s._trackingUnavailable = true;
+                // Refresh panel if open so the notice shows immediately
+                if (currentDetailShipmentId === current.id) openDetailPanel(s);
+            }
+            return null;
+        }
         if (!data || (!data.status && data.lat == null)) return null;
 
         // Build update object — only include fields that actually changed
