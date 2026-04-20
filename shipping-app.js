@@ -1392,35 +1392,46 @@ async function refreshShipment(s) {
     if (s.status === 'delivered') return null;
 
     try {
-        const data = await fetchTrackingData(s.container_number);
+        // Re-read the shipment from DB to get the latest state
+        // (the server-side cron may have already updated it)
+        const { data: freshRow } = await sb
+            .from('shipping_shipments')
+            .select('*')
+            .eq('id', s.id)
+            .single();
+        const current = freshRow || s;
+
+        // If cron already marked it delivered, just sync locally
+        if (current.status === 'delivered') {
+            Object.assign(s, current);
+            return current;
+        }
+
+        const data = await fetchTrackingData(current.container_number);
         if (!data || (!data.status && data.lat == null)) return null;
 
         // Build update object — only include fields that actually changed
         const updates = {};
-        let statusChanged = false;
-        let etaChanged = false;
 
-        if (data.status && data.status !== s.status) {
+        if (data.status && data.status !== current.status) {
             updates.status = data.status;
-            statusChanged = true;
         }
-        if (data.lat != null && data.lat !== s.lat) {
+        if (data.lat != null && data.lat !== current.lat) {
             updates.lat = data.lat;
         }
-        if (data.lng != null && data.lng !== s.lng) {
+        if (data.lng != null && data.lng !== current.lng) {
             updates.lng = data.lng;
         }
-        if (data.eta && data.eta !== s.eta) {
+        if (data.eta && data.eta !== current.eta) {
             updates.eta = data.eta;
-            etaChanged = true;
         }
-        if (data.origin && !s.origin) {
+        if (data.origin && !current.origin) {
             updates.origin = data.origin;
         }
-        if (data.destination && !s.destination) {
+        if (data.destination && !current.destination) {
             updates.destination = data.destination;
         }
-        if (data.origin && data.destination && !s.route_name) {
+        if (data.origin && data.destination && !current.route_name) {
             updates.route_name = `${data.origin} → ${data.destination}`;
         }
         // Compute days_transit from POL to now (or ETA)
@@ -1428,10 +1439,9 @@ async function refreshShipment(s) {
             const etaDate = new Date(data.eta);
             const now = new Date();
             const refDate = data.status === 'delivered' ? etaDate : now;
-            // Find created_at as rough departure proxy
-            const departed = new Date(s.created_at);
+            const departed = new Date(current.created_at);
             const days = Math.max(0, Math.round((refDate - departed) / 86400000));
-            if (days !== s.days_transit) {
+            if (days !== current.days_transit) {
                 updates.days_transit = days;
             }
         }
@@ -1447,15 +1457,16 @@ async function refreshShipment(s) {
             .eq('id', s.id);
 
         if (error) {
-            console.error(`Failed to update ${s.container_number}:`, error.message);
+            console.error(`Failed to update ${current.container_number}:`, error.message);
             return null;
         }
 
-        // Create notification for status or ETA changes (triggers email webhook)
-        if (statusChanged || etaChanged) {
-            const notif = buildTrackingNotification(s, data, statusChanged, etaChanged);
-            await sb.from('shipping_notifications').insert(notif);
-        }
+        // Sync local shipment object with updates
+        Object.assign(s, updates);
+
+        // NOTE: Notifications are created exclusively by the server-side cron
+        // (refresh-all-tracking) to prevent duplicate notifications from
+        // both frontend and cron firing on the same status change.
 
         return updates;
     } catch (err) {

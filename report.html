@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shipping Intelligence Report | TeaTrade Shipping</title>
+    <link rel="icon" type="image/png" href="https://teatrade.co.uk/images/favicon-nb.png">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --tt-blue: #1a73e8;
+            --tt-blue-hover: #1557b0;
+            --tt-blue-light: #e8f0fe;
+            --tt-dark: #202124;
+            --tt-text: #3c4043;
+            --tt-muted: #5f6368;
+            --tt-border: #dadce0;
+            --tt-bg: #f8f9fa;
+            --tt-green: #34a853;
+            --tt-green-dark: #137333;
+            --tt-green-light: #e6f4ea;
+            --tt-yellow: #f9ab00;
+            --tt-yellow-light: #fef7e0;
+            --tt-red: #ea4335;
+            --tt-red-light: #fce8e6;
+            --tt-radius: 8px;
+            --tt-radius-lg: 12px;
+            --tt-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+            --tt-shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #fff;
+            color: var(--tt-text);
+            line-height: 1.6;
+        }
+
+        /* ========== Print Styles ========== */
+        @media print {
+            body { background: #fff; font-size: 10pt; }
+            .report-header { break-after: avoid; }
+            .report-section { break-inside: avoid; }
+            .no-print { display: none !important; }
+            .report-container { max-width: 100%; padding: 0; }
+            .chart-wrap { max-height: 280px; }
+        }
+
+        /* ========== Layout ========== */
+        .report-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 32px 80px;
+        }
+
+        /* ========== Report Header ========== */
+        .report-header {
+            border-bottom: 3px solid var(--tt-dark);
+            padding-bottom: 24px;
+            margin-bottom: 40px;
+        }
+        .report-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .report-logo {
+            font-size: 22px;
+            font-weight: 400;
+            color: var(--tt-muted);
+        }
+        .report-logo span { font-weight: 500; color: var(--tt-dark); }
+        .report-badge {
+            background: var(--tt-blue-light);
+            color: var(--tt-blue);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 12px;
+            border-radius: 50px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .report-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--tt-dark);
+            margin-bottom: 4px;
+        }
+        .report-subtitle {
+            font-size: 14px;
+            color: var(--tt-muted);
+        }
+        .report-meta {
+            display: flex;
+            gap: 24px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--tt-muted);
+        }
+        .report-meta strong { color: var(--tt-text); }
+
+        /* ========== Toolbar ========== */
+        .report-toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+        .btn-export {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            border: 1px solid var(--tt-border);
+            border-radius: 50px;
+            background: #fff;
+            color: var(--tt-text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-export:hover { background: var(--tt-bg); border-color: #bdc1c6; }
+        .btn-export.primary {
+            background: var(--tt-blue);
+            color: #fff;
+            border-color: var(--tt-blue);
+        }
+        .btn-export.primary:hover { background: var(--tt-blue-hover); }
+        .btn-export svg { width: 16px; height: 16px; }
+
+        /* ========== Sections ========== */
+        .report-section {
+            margin-bottom: 48px;
+        }
+        .section-number {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--tt-blue);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--tt-dark);
+            margin-bottom: 6px;
+        }
+        .section-desc {
+            font-size: 13px;
+            color: var(--tt-muted);
+            margin-bottom: 20px;
+            max-width: 700px;
+        }
+
+        /* ========== KPI Cards ========== */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .kpi-card {
+            background: var(--tt-bg);
+            border-radius: var(--tt-radius-lg);
+            padding: 20px;
+            text-align: center;
+        }
+        .kpi-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--tt-muted);
+            margin-bottom: 6px;
+        }
+        .kpi-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--tt-dark);
+            line-height: 1.1;
+        }
+        .kpi-sub {
+            font-size: 12px;
+            color: var(--tt-muted);
+            margin-top: 4px;
+        }
+        .kpi-value.green { color: var(--tt-green-dark); }
+        .kpi-value.red { color: var(--tt-red); }
+        .kpi-value.blue { color: var(--tt-blue); }
+
+        /* ========== Charts ========== */
+        .chart-card {
+            background: var(--tt-bg);
+            border-radius: var(--tt-radius-lg);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .chart-card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--tt-dark);
+            margin-bottom: 4px;
+        }
+        .chart-card-sub {
+            font-size: 12px;
+            color: var(--tt-muted);
+            margin-bottom: 16px;
+        }
+        .chart-wrap {
+            position: relative;
+            height: 320px;
+        }
+        .chart-wrap.tall { height: 400px; }
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 768px) {
+            .chart-row { grid-template-columns: 1fr; }
+        }
+
+        /* ========== Tables ========== */
+        .report-table-wrap {
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .report-table th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--tt-muted);
+            padding: 10px 14px;
+            border-bottom: 2px solid var(--tt-border);
+            white-space: nowrap;
+        }
+        .report-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid #f1f3f4;
+            color: var(--tt-text);
+        }
+        .report-table tbody tr:hover { background: #f8f9fa; }
+        .report-table .mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        .pill {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 50px;
+        }
+        .pill.green { background: var(--tt-green-light); color: var(--tt-green-dark); }
+        .pill.red { background: var(--tt-red-light); color: var(--tt-red); }
+        .pill.yellow { background: var(--tt-yellow-light); color: #b06000; }
+        .pill.blue { background: var(--tt-blue-light); color: var(--tt-blue); }
+        .trend-up { color: var(--tt-red); font-weight: 600; }
+        .trend-down { color: var(--tt-green-dark); font-weight: 600; }
+        .trend-flat { color: var(--tt-muted); }
+
+        /* ========== Insight Boxes ========== */
+        .insight-box {
+            display: flex;
+            gap: 14px;
+            padding: 16px 20px;
+            border-radius: var(--tt-radius);
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .insight-box.info { background: var(--tt-blue-light); }
+        .insight-box.warn { background: var(--tt-yellow-light); }
+        .insight-box.good { background: var(--tt-green-light); }
+        .insight-box.bad { background: var(--tt-red-light); }
+        .insight-box .insight-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+        .insight-box strong { color: var(--tt-dark); }
+
+        /* ========== Forecast Table ========== */
+        .forecast-card {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+            border: 1px solid #c2d7f7;
+            border-radius: var(--tt-radius-lg);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .forecast-card .section-title { font-size: 17px; }
+        .forecast-table td { font-size: 13px; }
+        .forecast-days {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--tt-blue);
+        }
+        .confidence-bar {
+            width: 60px;
+            height: 6px;
+            background: #ddd;
+            border-radius: 3px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .confidence-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: var(--tt-green);
+        }
+
+        /* ========== Candlestick Legend ========== */
+        .candle-legend {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: var(--tt-muted);
+            margin-top: 12px;
+        }
+        .candle-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .candle-legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+        }
+
+        /* ========== Footer ========== */
+        .report-footer {
+            border-top: 1px solid var(--tt-border);
+            padding-top: 20px;
+            margin-top: 48px;
+            font-size: 12px;
+            color: var(--tt-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        @media (max-width: 640px) {
+            .report-container { padding: 20px 16px 60px; }
+            .report-title { font-size: 22px; }
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .kpi-value { font-size: 24px; }
+            .report-meta { flex-direction: column; gap: 4px; }
+            .report-toolbar { flex-wrap: wrap; }
+            .chart-wrap { height: 260px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+
+        <!-- ═══════════════════════════════════════════════════
+             HEADER
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-header">
+            <div class="report-header-top">
+                <div class="report-logo"><span>Tea</span>Trade <span class="report-badge">Shipping Intelligence</span></div>
+                <div style="text-align:right;font-size:12px;color:var(--tt-muted);">
+                    Report ID: TT-RPT-2026-0420<br>
+                    Classification: Client Confidential
+                </div>
+            </div>
+            <div class="report-title">Shipping Performance &amp; Transit Intelligence Report</div>
+            <div class="report-subtitle">Comprehensive analysis of container transit times, ETA deviations, transshipment performance, and route forecasting</div>
+            <div class="report-meta">
+                <span><strong>Period:</strong> 1 Jan 2026 – 20 Apr 2026</span>
+                <span><strong>Shipments Analysed:</strong> 47</span>
+                <span><strong>Routes Covered:</strong> 6</span>
+                <span><strong>Generated:</strong> <span id="reportDate"></span></span>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             TOOLBAR
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-toolbar no-print">
+            <button class="btn-export primary" onclick="window.print()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                Print / Save as PDF
+            </button>
+            <button class="btn-export" onclick="exportCSV()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+            </button>
+            <button class="btn-export" onclick="window.location.href='/'">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                Back to Dashboard
+            </button>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 1: EXECUTIVE SUMMARY
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 1</div>
+            <div class="section-title">Executive Summary</div>
+            <div class="section-desc">Key performance indicators across all tracked shipments for the reporting period.</div>
+
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total Shipments</div>
+                    <div class="kpi-value">47</div>
+                    <div class="kpi-sub">6 routes tracked</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Avg Transit Time</div>
+                    <div class="kpi-value">26.4d</div>
+                    <div class="kpi-sub">vs 24.8d target</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">On-Time Rate</div>
+                    <div class="kpi-value green">74%</div>
+                    <div class="kpi-sub">35 of 47 shipments</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Avg ETA Slippage</div>
+                    <div class="kpi-value red">+2.3d</div>
+                    <div class="kpi-sub">weighted avg deviation</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Delayed</div>
+                    <div class="kpi-value red">12</div>
+                    <div class="kpi-sub">25.5% delay rate</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Active Now</div>
+                    <div class="kpi-value blue">8</div>
+                    <div class="kpi-sub">3 at transshipment</div>
+                </div>
+            </div>
+
+            <div class="insight-box warn">
+                <div class="insight-icon">⚠️</div>
+                <div><strong>Attention:</strong> The Jakarta → Southampton route has a 42% delay rate across 12 shipments — significantly above your fleet average of 25.5%. Transshipment dwell time at Singapore is the primary contributor. Consider alternative routing via Port Klang or book earlier vessel slots.</div>
+            </div>
+            <div class="insight-box good">
+                <div class="insight-icon">✅</div>
+                <div><strong>Positive:</strong> Mombasa → Felixstowe continues to be your most reliable route at 87% on-time, with an average transit of 24 days — 2.4 days below fleet average. Prioritise this corridor for time-sensitive cargo.</div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 2: CANDLESTICK — TRANSIT TIME VARIATION
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 2</div>
+            <div class="section-title">Transit Time Variation by Route</div>
+            <div class="section-desc">Candlestick chart showing min/max transit range (wicks), route average (open), and actual average achieved (close) for each route. A green body means actual was faster than the route benchmark; red means slower.</div>
+
+            <div class="chart-card">
+                <div class="chart-card-title">Transit Days — Candlestick Analysis</div>
+                <div class="chart-card-sub">Open = Route Benchmark &nbsp;|&nbsp; Close = Actual Average &nbsp;|&nbsp; Wicks = Min / Max Observed</div>
+                <div class="chart-wrap tall">
+                    <canvas id="candlestickChart"></canvas>
+                </div>
+                <div class="candle-legend">
+                    <div class="candle-legend-item"><div class="candle-legend-swatch" style="background:#34a853;"></div> Actual ≤ Benchmark (faster)</div>
+                    <div class="candle-legend-item"><div class="candle-legend-swatch" style="background:#ea4335;"></div> Actual > Benchmark (slower)</div>
+                    <div class="candle-legend-item"><div class="candle-legend-swatch" style="background:#dadce0; height:2px; width:14px; align-self:center;"></div> Min–Max Range (wicks)</div>
+                </div>
+            </div>
+
+            <div class="report-table-wrap">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Route</th>
+                            <th>Shipments</th>
+                            <th>Min Days</th>
+                            <th>Max Days</th>
+                            <th>Benchmark</th>
+                            <th>Actual Avg</th>
+                            <th>Deviation</th>
+                            <th>Trend</th>
+                        </tr>
+                    </thead>
+                    <tbody id="candleTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 3: ETA SLIPPAGE ANALYSIS
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 3</div>
+            <div class="section-title">ETA Slippage Over Time</div>
+            <div class="section-desc">Tracks how ETA accuracy changed across the reporting period — each point represents a shipment's final deviation from its original ETA. Negative = arrived early, positive = arrived late.</div>
+
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-card-title">ETA Deviation by Shipment (Chronological)</div>
+                    <div class="chart-card-sub">Days early (−) vs days late (+) against original ETA</div>
+                    <div class="chart-wrap">
+                        <canvas id="slippageChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title">Deviation Distribution</div>
+                    <div class="chart-card-sub">How many shipments fell into each deviation band</div>
+                    <div class="chart-wrap">
+                        <canvas id="deviationHistogram"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="insight-box info">
+                <div class="insight-icon">📊</div>
+                <div><strong>Analysis:</strong> 68% of shipments arrived within ±2 days of their original ETA. The remaining 32% showed slippage of 3+ days, predominantly on the Jakarta → Southampton and Shanghai → Felixstowe routes. ETA accuracy has improved by 0.8 days month-on-month since February.</div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 4: TRANSSHIPMENT PORT ANALYSIS
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 4</div>
+            <div class="section-title">Transshipment Port Analysis</div>
+            <div class="section-desc">Performance breakdown of each transshipment hub, including average dwell time, delay contribution, and throughput volume.</div>
+
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-card-title">Avg Dwell Time by Transshipment Port</div>
+                    <div class="chart-card-sub">Days containers spend at each hub before onward shipment</div>
+                    <div class="chart-wrap">
+                        <canvas id="dwellChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title">Delay Contribution by Port</div>
+                    <div class="chart-card-sub">Percentage of total fleet delays attributable to each port</div>
+                    <div class="chart-wrap">
+                        <canvas id="delayPieChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="report-table-wrap">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Transshipment Port</th>
+                            <th>Containers Handled</th>
+                            <th>Avg Dwell (days)</th>
+                            <th>Max Dwell (days)</th>
+                            <th>Delay Rate</th>
+                            <th>Risk Level</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Salalah</strong></td>
+                            <td>18</td>
+                            <td class="mono">3.2</td>
+                            <td class="mono">7</td>
+                            <td>16.7%</td>
+                            <td><span class="pill green">Low</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Singapore</strong></td>
+                            <td>14</td>
+                            <td class="mono">5.8</td>
+                            <td class="mono">12</td>
+                            <td>42.9%</td>
+                            <td><span class="pill red">High</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Colombo</strong></td>
+                            <td>8</td>
+                            <td class="mono">2.9</td>
+                            <td class="mono">5</td>
+                            <td>12.5%</td>
+                            <td><span class="pill green">Low</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Port Klang</strong></td>
+                            <td>5</td>
+                            <td class="mono">4.4</td>
+                            <td class="mono">8</td>
+                            <td>20.0%</td>
+                            <td><span class="pill yellow">Medium</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Jebel Ali</strong></td>
+                            <td>2</td>
+                            <td class="mono">3.0</td>
+                            <td class="mono">4</td>
+                            <td>0%</td>
+                            <td><span class="pill green">Low</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="insight-box bad">
+                <div class="insight-icon">🚨</div>
+                <div><strong>Singapore hub alert:</strong> Average dwell time of 5.8 days and a 42.9% delay rate makes Singapore the highest-risk transshipment point in your network. 6 of your 12 total fleet delays transited through Singapore. Recommend re-routing Jakarta-origin shipments via Colombo or Port Klang where possible.</div>
+            </div>
+            <div class="insight-box good">
+                <div class="insight-icon">⚓</div>
+                <div><strong>Salalah performing well:</strong> Consistent 3.2-day dwell with no significant delays. It remains the recommended hub for East Africa → UK shipments.</div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 5: ROUTE PERFORMANCE BREAKDOWN
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 5</div>
+            <div class="section-title">Route Performance Breakdown</div>
+            <div class="section-desc">Detailed per-route metrics including transit reliability, carrier performance, and period-on-period trend.</div>
+
+            <div class="chart-card">
+                <div class="chart-card-title">Transit Days by Route — Stacked Breakdown</div>
+                <div class="chart-card-sub">Sailing time vs transshipment dwell vs port handling</div>
+                <div class="chart-wrap">
+                    <canvas id="stackedRouteChart"></canvas>
+                </div>
+            </div>
+
+            <div class="report-table-wrap">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Route</th>
+                            <th>Shipments</th>
+                            <th>Avg Transit</th>
+                            <th>On-Time %</th>
+                            <th>Avg Slippage</th>
+                            <th>Primary Carrier</th>
+                            <th>Transship Via</th>
+                            <th>Trend (vs prev Q)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Mombasa → Felixstowe</strong></td>
+                            <td>15</td>
+                            <td class="mono">24.0d</td>
+                            <td><span class="pill green">87%</span></td>
+                            <td class="trend-down">−0.5d</td>
+                            <td>MSC</td>
+                            <td>Salalah</td>
+                            <td class="trend-down">▼ 1.2d faster</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Colombo → London Gateway</strong></td>
+                            <td>10</td>
+                            <td class="mono">22.4d</td>
+                            <td><span class="pill green">80%</span></td>
+                            <td class="trend-down">−0.2d</td>
+                            <td>Hapag-Lloyd</td>
+                            <td>Jebel Ali</td>
+                            <td class="trend-flat">→ stable</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Shanghai → Felixstowe</strong></td>
+                            <td>8</td>
+                            <td class="mono">28.6d</td>
+                            <td><span class="pill yellow">63%</span></td>
+                            <td class="trend-up">+2.8d</td>
+                            <td>COSCO</td>
+                            <td>Singapore / Port Klang</td>
+                            <td class="trend-up">▲ 1.8d slower</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Jakarta → Southampton</strong></td>
+                            <td>12</td>
+                            <td class="mono">32.1d</td>
+                            <td><span class="pill red">58%</span></td>
+                            <td class="trend-up">+4.6d</td>
+                            <td>Evergreen</td>
+                            <td>Singapore</td>
+                            <td class="trend-up">▲ 3.2d slower</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Colombo → Felixstowe</strong></td>
+                            <td>6</td>
+                            <td class="mono">21.8d</td>
+                            <td><span class="pill green">83%</span></td>
+                            <td class="trend-down">−0.8d</td>
+                            <td>MSC</td>
+                            <td>Salalah</td>
+                            <td class="trend-down">▼ 0.6d faster</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Mombasa → London Gateway</strong></td>
+                            <td>4</td>
+                            <td class="mono">25.5d</td>
+                            <td><span class="pill green">75%</span></td>
+                            <td class="trend-up">+1.0d</td>
+                            <td>CMA CGM</td>
+                            <td>Salalah</td>
+                            <td class="trend-flat">→ stable</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 6: CARRIER PERFORMANCE
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 6</div>
+            <div class="section-title">Carrier Performance Comparison</div>
+            <div class="section-desc">How each shipping line performed across your shipments during the reporting period.</div>
+
+            <div class="chart-card">
+                <div class="chart-card-title">On-Time Rate by Carrier</div>
+                <div class="chart-card-sub">Percentage of shipments arriving within 2 days of original ETA</div>
+                <div class="chart-wrap">
+                    <canvas id="carrierChart"></canvas>
+                </div>
+            </div>
+
+            <div class="report-table-wrap">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Carrier</th>
+                            <th>Shipments</th>
+                            <th>Avg Transit</th>
+                            <th>On-Time %</th>
+                            <th>Avg Slippage</th>
+                            <th>Reliability</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>MSC</strong></td>
+                            <td>18</td>
+                            <td class="mono">23.8d</td>
+                            <td><span class="pill green">83%</span></td>
+                            <td class="trend-down">−0.3d</td>
+                            <td><span class="pill green">Excellent</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Hapag-Lloyd</strong></td>
+                            <td>10</td>
+                            <td class="mono">22.6d</td>
+                            <td><span class="pill green">80%</span></td>
+                            <td class="trend-down">−0.1d</td>
+                            <td><span class="pill green">Good</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>CMA CGM</strong></td>
+                            <td>5</td>
+                            <td class="mono">25.2d</td>
+                            <td><span class="pill yellow">60%</span></td>
+                            <td class="trend-up">+1.8d</td>
+                            <td><span class="pill yellow">Fair</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>COSCO</strong></td>
+                            <td>8</td>
+                            <td class="mono">29.4d</td>
+                            <td><span class="pill yellow">63%</span></td>
+                            <td class="trend-up">+2.6d</td>
+                            <td><span class="pill yellow">Fair</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Evergreen</strong></td>
+                            <td>6</td>
+                            <td class="mono">33.2d</td>
+                            <td><span class="pill red">50%</span></td>
+                            <td class="trend-up">+4.2d</td>
+                            <td><span class="pill red">Poor</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 7: FORECAST & PLANNING RECOMMENDATIONS
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 7</div>
+            <div class="section-title">Forecast &amp; Planning Recommendations</div>
+            <div class="section-desc">Data-driven transit day forecasts for each route, based on historical patterns, seasonal trends, and transshipment risk. Use these figures for your next quarter's supply chain planning.</div>
+
+            <div class="forecast-card">
+                <div class="section-title" style="margin-bottom:16px;">📅 Recommended Planning Days by Route (Q3 2026)</div>
+                <div class="report-table-wrap">
+                    <table class="report-table forecast-table">
+                        <thead>
+                            <tr>
+                                <th>Route</th>
+                                <th>Historical Avg</th>
+                                <th>Recommended Planning Days</th>
+                                <th>Buffer Included</th>
+                                <th>Confidence</th>
+                                <th>Rationale</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Mombasa → Felixstowe</strong></td>
+                                <td class="mono">24.0d</td>
+                                <td><span class="forecast-days">26</span> days</td>
+                                <td class="mono">+2d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:92%;"></div></div> 92%</td>
+                                <td>Highly consistent. Salalah transit adds minimal variance.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Colombo → London Gateway</strong></td>
+                                <td class="mono">22.4d</td>
+                                <td><span class="forecast-days">25</span> days</td>
+                                <td class="mono">+3d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:85%;"></div></div> 85%</td>
+                                <td>Stable route. Buffer for monsoon season delays in Q3.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Shanghai → Felixstowe</strong></td>
+                                <td class="mono">28.6d</td>
+                                <td><span class="forecast-days">33</span> days</td>
+                                <td class="mono">+4d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:68%;"></div></div> 68%</td>
+                                <td>Singapore transshipment adds variability. Worsening trend.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Jakarta → Southampton</strong></td>
+                                <td class="mono">32.1d</td>
+                                <td><span class="forecast-days">38</span> days</td>
+                                <td class="mono">+6d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:54%;"></div></div> 54%</td>
+                                <td>High variance. Singapore congestion likely to persist.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Colombo → Felixstowe</strong></td>
+                                <td class="mono">21.8d</td>
+                                <td><span class="forecast-days">24</span> days</td>
+                                <td class="mono">+2d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:88%;"></div></div> 88%</td>
+                                <td>Fast and reliable via Salalah. Minimal buffer needed.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Mombasa → London Gateway</strong></td>
+                                <td class="mono">25.5d</td>
+                                <td><span class="forecast-days">28</span> days</td>
+                                <td class="mono">+3d</td>
+                                <td><div class="confidence-bar"><div class="confidence-fill" style="width:75%;"></div></div> 75%</td>
+                                <td>Limited sample. Buffer recommended until more data.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="insight-box info">
+                <div class="insight-icon">🧭</div>
+                <div><strong>Planning methodology:</strong> Recommended days = Historical average + buffer. Buffer is calculated from the 85th percentile of observed deviations per route, adjusted for seasonal patterns and current transshipment hub congestion levels. Confidence score reflects sample size and variance stability.</div>
+            </div>
+
+            <div class="insight-box warn">
+                <div class="insight-icon">📋</div>
+                <div><strong>Action items for Q3 2026:</strong><br>
+                1. <strong>Jakarta shipments:</strong> Book 38-day lead times minimum. Evaluate Colombo-transshipment alternative.<br>
+                2. <strong>Shanghai shipments:</strong> Request Port Klang routing from COSCO to avoid Singapore congestion.<br>
+                3. <strong>Mombasa shipments:</strong> Continue current MSC/Salalah routing — performance is excellent.<br>
+                4. <strong>Carrier review:</strong> Open dialogue with Evergreen regarding their 50% on-time rate. Consider MSC as alternative for Jakarta origin.</div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             SECTION 8: CONTAINER LIFECYCLE DETAIL
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-section">
+            <div class="section-number">Section 8</div>
+            <div class="section-title">Container Lifecycle Audit Trail (Sample)</div>
+            <div class="section-desc">Detailed status history for a sample shipment, showing every recorded change. This data is generated from the shipment_history audit table.</div>
+
+            <div class="report-table-wrap">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Container</th>
+                            <th>Status</th>
+                            <th>Lat / Lng</th>
+                            <th>ETA</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="mono">15 Jan 09:24</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill blue">Pending</span></td>
+                            <td class="mono">—</td>
+                            <td>—</td>
+                            <td>Tracking initialised</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">16 Jan 14:02</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill green">In Transit</span></td>
+                            <td class="mono">-4.0434, 39.6682</td>
+                            <td>8 Feb</td>
+                            <td>Departed Mombasa</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">22 Jan 06:18</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill yellow">Transshipment</span></td>
+                            <td class="mono">16.9500, 54.0000</td>
+                            <td>8 Feb</td>
+                            <td>Arrived Salalah</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">25 Jan 11:45</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill green">In Transit</span></td>
+                            <td class="mono">16.9500, 54.0000</td>
+                            <td>9 Feb</td>
+                            <td>Departed Salalah — ETA slipped +1d</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">04 Feb 20:33</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill green">In Transit</span></td>
+                            <td class="mono">36.1200, -5.3500</td>
+                            <td>10 Feb</td>
+                            <td>Passing Gibraltar — ETA slipped +2d</td>
+                        </tr>
+                        <tr>
+                            <td class="mono">10 Feb 08:12</td>
+                            <td class="mono">MSCU7294813</td>
+                            <td><span class="pill blue">Delivered</span></td>
+                            <td class="mono">51.9600, 1.3500</td>
+                            <td>10 Feb</td>
+                            <td>Discharged at Felixstowe</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="insight-box info">
+                <div class="insight-icon">📦</div>
+                <div><strong>Lifecycle summary:</strong> MSCU7294813 completed Mombasa → Felixstowe in <strong>26 days</strong> (vs 24-day benchmark). Total ETA slippage: +2 days, accumulated during Salalah transshipment (+1d) and Channel approach (+1d). Within acceptable tolerance.</div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════
+             FOOTER
+        ═══════════════════════════════════════════════════ -->
+        <div class="report-footer">
+            <div>TeaTrade Shipping Intelligence &copy; 2026 &nbsp;|&nbsp; shipping.teatrade.co.uk &nbsp;|&nbsp; Confidential</div>
+            <div>Page generated <span id="footerDate"></span></div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════
+         CHARTS & DATA
+    ═══════════════════════════════════════════════════ -->
+    <script>
+    // ── Set dates ──
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    document.getElementById('reportDate').textContent = dateStr;
+    document.getElementById('footerDate').textContent = dateStr;
+
+    // ── Mock route data ──
+    const routes = [
+        { name: 'Mombasa → Felixstowe',    min: 21, max: 28, benchmark: 24, actual: 24.0, shipments: 15 },
+        { name: 'Colombo → London Gateway', min: 19, max: 26, benchmark: 22, actual: 22.4, shipments: 10 },
+        { name: 'Shanghai → Felixstowe',    min: 24, max: 36, benchmark: 27, actual: 28.6, shipments: 8 },
+        { name: 'Jakarta → Southampton',    min: 26, max: 42, benchmark: 30, actual: 32.1, shipments: 12 },
+        { name: 'Colombo → Felixstowe',     min: 19, max: 25, benchmark: 22, actual: 21.8, shipments: 6 },
+        { name: 'Mombasa → London Gateway',  min: 22, max: 30, benchmark: 25, actual: 25.5, shipments: 4 },
+    ];
+
+    // ══════════════════════════════════════
+    //  CANDLESTICK CHART (custom bar + error bars)
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('candlestickChart').getContext('2d');
+        const labels = routes.map(r => r.name);
+
+        // The "candle body" is from benchmark (open) to actual (close)
+        const bodyData = routes.map(r => {
+            const o = r.benchmark;
+            const c = r.actual;
+            return [Math.min(o, c), Math.max(o, c)];
+        });
+
+        const colors = routes.map(r => r.actual <= r.benchmark ? '#34a853' : '#ea4335');
+        const borderColors = routes.map(r => r.actual <= r.benchmark ? '#137333' : '#c5221f');
+
+        // Custom plugin to draw wicks
+        const wickPlugin = {
+            id: 'candleWicks',
+            afterDatasetsDraw(chart) {
+                const meta = chart.getDatasetMeta(0);
+                const ctx2 = chart.ctx;
+                ctx2.save();
+                meta.data.forEach((bar, i) => {
+                    const r = routes[i];
+                    const xScale = chart.scales.x;
+                    const yScale = chart.scales.y;
+                    const x = bar.x;
+                    const yMin = yScale.getPixelForValue(r.min);
+                    const yMax = yScale.getPixelForValue(r.max);
+                    const yBody0 = yScale.getPixelForValue(bodyData[i][0]);
+                    const yBody1 = yScale.getPixelForValue(bodyData[i][1]);
+
+                    ctx2.strokeStyle = '#5f6368';
+                    ctx2.lineWidth = 1.5;
+
+                    // Lower wick (min to body bottom)
+                    ctx2.beginPath();
+                    ctx2.moveTo(x, yBody0);
+                    ctx2.lineTo(x, yMin);
+                    ctx2.stroke();
+
+                    // Upper wick (body top to max)
+                    ctx2.beginPath();
+                    ctx2.moveTo(x, yBody1);
+                    ctx2.lineTo(x, yMax);
+                    ctx2.stroke();
+
+                    // Wick caps
+                    const capW = 8;
+                    ctx2.beginPath();
+                    ctx2.moveTo(x - capW, yMin);
+                    ctx2.lineTo(x + capW, yMin);
+                    ctx2.stroke();
+                    ctx2.beginPath();
+                    ctx2.moveTo(x - capW, yMax);
+                    ctx2.lineTo(x + capW, yMax);
+                    ctx2.stroke();
+
+                    // Open/Close markers
+                    // Open marker (benchmark) — small horizontal line on left
+                    const yOpen = yScale.getPixelForValue(r.benchmark);
+                    ctx2.strokeStyle = '#1a73e8';
+                    ctx2.lineWidth = 2;
+                    ctx2.beginPath();
+                    ctx2.moveTo(x - 16, yOpen);
+                    ctx2.lineTo(x - 4, yOpen);
+                    ctx2.stroke();
+
+                    // Close marker (actual) — small horizontal line on right
+                    const yClose = yScale.getPixelForValue(r.actual);
+                    ctx2.strokeStyle = colors[i];
+                    ctx2.lineWidth = 2;
+                    ctx2.beginPath();
+                    ctx2.moveTo(x + 4, yClose);
+                    ctx2.lineTo(x + 16, yClose);
+                    ctx2.stroke();
+                });
+                ctx2.restore();
+            }
+        };
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Transit Range',
+                    data: bodyData,
+                    backgroundColor: colors.map(c => c + '33'),
+                    borderColor: borderColors,
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    barPercentage: 0.45,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'x',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#202124',
+                        cornerRadius: 8,
+                        padding: 12,
+                        titleFont: { family: 'Roboto', weight: '600' },
+                        bodyFont: { family: 'JetBrains Mono', size: 12 },
+                        callbacks: {
+                            title: (items) => routes[items[0].dataIndex].name,
+                            label: (item) => {
+                                const r = routes[item.dataIndex];
+                                return [
+                                    `Min: ${r.min}d`,
+                                    `Benchmark: ${r.benchmark}d`,
+                                    `Actual Avg: ${r.actual}d`,
+                                    `Max: ${r.max}d`,
+                                    `Deviation: ${(r.actual - r.benchmark) >= 0 ? '+' : ''}${(r.actual - r.benchmark).toFixed(1)}d`,
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Transit Days', font: { family: 'Roboto', size: 12 }, color: '#5f6368' },
+                        ticks: { font: { family: 'JetBrains Mono', size: 11 }, color: '#5f6368', callback: v => v + 'd' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false },
+                        min: 15, max: 45
+                    },
+                    x: {
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368', maxRotation: 25 },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            },
+            plugins: [wickPlugin]
+        });
+
+        // Populate candle table
+        const tbody = document.getElementById('candleTableBody');
+        routes.forEach(r => {
+            const dev = r.actual - r.benchmark;
+            const devStr = (dev >= 0 ? '+' : '') + dev.toFixed(1) + 'd';
+            const devClass = dev > 0 ? 'trend-up' : dev < 0 ? 'trend-down' : 'trend-flat';
+            const trendText = dev > 1 ? '▲ Worsening' : dev < -1 ? '▼ Improving' : '→ Stable';
+            const trendClass = dev > 1 ? 'trend-up' : dev < -1 ? 'trend-down' : 'trend-flat';
+            tbody.innerHTML += `<tr>
+                <td><strong>${r.name}</strong></td>
+                <td>${r.shipments}</td>
+                <td class="mono">${r.min}d</td>
+                <td class="mono">${r.max}d</td>
+                <td class="mono">${r.benchmark}d</td>
+                <td class="mono">${r.actual}d</td>
+                <td class="${devClass}">${devStr}</td>
+                <td class="${trendClass}">${trendText}</td>
+            </tr>`;
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  ETA SLIPPAGE SCATTER CHART
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('slippageChart').getContext('2d');
+        // Mock: 47 shipments over Jan–Apr
+        const slippageData = [
+            -1, 0, 2, -1, 0, 1, 3, 0, -2, 1,
+            5, 0, -1, 2, 0, 1, -1, 0, 3, 7,
+            0, 1, -1, 0, 2, 4, -1, 0, 1, 0,
+            -2, 1, 6, 0, -1, 2, 0, 1, -1, 3,
+            0, 0, 1, -1, 2, 0, 8
+        ];
+        const labels = slippageData.map((_, i) => `#${i + 1}`);
+        const colors = slippageData.map(v => v > 2 ? '#ea4335' : v < 0 ? '#34a853' : '#1a73e8');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'ETA Deviation (days)',
+                    data: slippageData,
+                    backgroundColor: colors.map(c => c + '88'),
+                    borderColor: colors,
+                    borderWidth: 1,
+                    borderRadius: 3,
+                    barPercentage: 0.7,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#202124',
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: item => {
+                                const v = item.parsed.y;
+                                return v > 0 ? `+${v} days late` : v < 0 ? `${v} days early` : 'On time';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Days Deviation', font: { family: 'Roboto', size: 11 }, color: '#5f6368' },
+                        ticks: { font: { family: 'JetBrains Mono', size: 11 }, color: '#5f6368', callback: v => (v > 0 ? '+' : '') + v + 'd' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false }
+                    },
+                    x: {
+                        ticks: { display: false },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  DEVIATION HISTOGRAM
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('deviationHistogram').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['≤ −2d', '−1d', 'On time', '+1d', '+2d', '+3–4d', '+5d+'],
+                datasets: [{
+                    label: 'Shipments',
+                    data: [3, 8, 12, 8, 6, 6, 4],
+                    backgroundColor: ['#34a85344', '#34a85344', '#1a73e844', '#f9ab0044', '#f9ab0044', '#ea433544', '#ea433544'],
+                    borderColor: ['#34a853', '#34a853', '#1a73e8', '#f9ab00', '#f9ab00', '#ea4335', '#ea4335'],
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    barPercentage: 0.7,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#202124', cornerRadius: 8, callbacks: { label: item => `${item.parsed.y} shipments` } }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Shipments', font: { family: 'Roboto', size: 11 }, color: '#5f6368' },
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false }
+                    },
+                    x: {
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368' },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  DWELL TIME CHART
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('dwellChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Salalah', 'Singapore', 'Colombo', 'Port Klang', 'Jebel Ali'],
+                datasets: [{
+                    label: 'Avg Dwell (days)',
+                    data: [3.2, 5.8, 2.9, 4.4, 3.0],
+                    backgroundColor: ['#34a85333', '#ea433533', '#34a85333', '#f9ab0033', '#34a85333'],
+                    borderColor: ['#34a853', '#ea4335', '#34a853', '#f9ab00', '#34a853'],
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    barPercentage: 0.6,
+                }, {
+                    label: 'Max Dwell (days)',
+                    data: [7, 12, 5, 8, 4],
+                    backgroundColor: 'rgba(0,0,0,0.04)',
+                    borderColor: '#bdc1c6',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    barPercentage: 0.6,
+                    borderDash: [4, 2],
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { font: { family: 'Roboto', size: 11 }, color: '#5f6368', usePointStyle: true, pointStyle: 'rect' }
+                    },
+                    tooltip: { backgroundColor: '#202124', cornerRadius: 8, callbacks: { label: item => `${item.dataset.label}: ${item.parsed.y}d` } }
+                },
+                scales: {
+                    y: {
+                        ticks: { font: { family: 'JetBrains Mono', size: 11 }, color: '#5f6368', callback: v => v + 'd' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false }
+                    },
+                    x: {
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368' },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  DELAY PIE CHART
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('delayPieChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Singapore', 'Port Klang', 'Salalah', 'Colombo', 'Other'],
+                datasets: [{
+                    data: [50, 17, 13, 8, 12],
+                    backgroundColor: ['#ea4335', '#f9ab00', '#34a853', '#1a73e8', '#bdc1c6'],
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                    hoverOffset: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '55%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { font: { family: 'Roboto', size: 12 }, color: '#3c4043', padding: 16, usePointStyle: true, pointStyle: 'circle' }
+                    },
+                    tooltip: {
+                        backgroundColor: '#202124',
+                        cornerRadius: 8,
+                        callbacks: { label: item => ` ${item.label}: ${item.parsed}% of delays` }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  STACKED ROUTE CHART
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('stackedRouteChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: routes.map(r => r.name),
+                datasets: [
+                    {
+                        label: 'Sailing Time',
+                        data: [18, 17, 20, 22, 17, 19],
+                        backgroundColor: '#1a73e844',
+                        borderColor: '#1a73e8',
+                        borderWidth: 1,
+                        borderRadius: 0,
+                    },
+                    {
+                        label: 'Transshipment Dwell',
+                        data: [3.2, 3.0, 5.2, 5.8, 2.9, 3.2],
+                        backgroundColor: '#f9ab0044',
+                        borderColor: '#f9ab00',
+                        borderWidth: 1,
+                        borderRadius: 0,
+                    },
+                    {
+                        label: 'Port Handling',
+                        data: [2.8, 2.4, 3.4, 4.3, 1.9, 3.3],
+                        backgroundColor: '#34a85344',
+                        borderColor: '#34a853',
+                        borderWidth: 1,
+                        borderRadius: { topLeft: 6, topRight: 6 },
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { font: { family: 'Roboto', size: 11 }, color: '#5f6368', usePointStyle: true, pointStyle: 'rect' }
+                    },
+                    tooltip: { backgroundColor: '#202124', cornerRadius: 8, mode: 'index', callbacks: { label: item => ` ${item.dataset.label}: ${item.parsed.y}d` } }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368', maxRotation: 25 },
+                        grid: { display: false },
+                        border: { display: false }
+                    },
+                    y: {
+                        stacked: true,
+                        title: { display: true, text: 'Total Days', font: { family: 'Roboto', size: 12 }, color: '#5f6368' },
+                        ticks: { font: { family: 'JetBrains Mono', size: 11 }, color: '#5f6368', callback: v => v + 'd' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  CARRIER CHART
+    // ══════════════════════════════════════
+    (function() {
+        const ctx = document.getElementById('carrierChart').getContext('2d');
+        const carriers = ['MSC', 'Hapag-Lloyd', 'CMA CGM', 'COSCO', 'Evergreen'];
+        const onTime = [83, 80, 60, 63, 50];
+        const colors = onTime.map(v => v >= 75 ? '#34a853' : v >= 60 ? '#f9ab00' : '#ea4335');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: carriers,
+                datasets: [{
+                    label: 'On-Time Rate (%)',
+                    data: onTime,
+                    backgroundColor: colors.map(c => c + '33'),
+                    borderColor: colors,
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    barPercentage: 0.55,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#202124', cornerRadius: 8, callbacks: { label: item => `${item.parsed.x}% on-time` } }
+                },
+                scales: {
+                    x: {
+                        min: 0, max: 100,
+                        ticks: { font: { family: 'Roboto', size: 11 }, color: '#5f6368', callback: v => v + '%' },
+                        grid: { color: '#f1f3f4' },
+                        border: { display: false }
+                    },
+                    y: {
+                        ticks: { font: { family: 'Roboto', size: 12, weight: '500' }, color: '#3c4043' },
+                        grid: { display: false },
+                        border: { display: false }
+                    }
+                }
+            }
+        });
+    })();
+
+    // ══════════════════════════════════════
+    //  CSV EXPORT
+    // ══════════════════════════════════════
+    function exportCSV() {
+        const headers = ['Route', 'Shipments', 'Min Days', 'Max Days', 'Benchmark', 'Actual Avg', 'Deviation', 'On-Time %', 'Primary Carrier', 'Transship Via', 'Recommended Planning Days'];
+        const routeDetails = [
+            ['Mombasa → Felixstowe', 15, 21, 28, 24, 24.0, -0.5, 87, 'MSC', 'Salalah', 26],
+            ['Colombo → London Gateway', 10, 19, 26, 22, 22.4, -0.2, 80, 'Hapag-Lloyd', 'Jebel Ali', 25],
+            ['Shanghai → Felixstowe', 8, 24, 36, 27, 28.6, 2.8, 63, 'COSCO', 'Singapore / Port Klang', 33],
+            ['Jakarta → Southampton', 12, 26, 42, 30, 32.1, 4.6, 58, 'Evergreen', 'Singapore', 38],
+            ['Colombo → Felixstowe', 6, 19, 25, 22, 21.8, -0.8, 83, 'MSC', 'Salalah', 24],
+            ['Mombasa → London Gateway', 4, 22, 30, 25, 25.5, 1.0, 75, 'CMA CGM', 'Salalah', 28],
+        ];
+
+        let csv = headers.join(',') + '\n';
+        routeDetails.forEach(row => {
+            csv += row.map(cell => {
+                const s = String(cell);
+                return s.includes(',') ? '"' + s + '"' : s;
+            }).join(',') + '\n';
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `teatrade-shipping-report-${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+    </script>
+</body>
+</html>

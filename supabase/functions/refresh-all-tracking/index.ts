@@ -203,43 +203,61 @@ serve(async (req: Request) => {
         updated++;
 
         // Create notification for status/ETA changes → triggers email webhook
+        // Guard: check for recent duplicate notification to prevent double-firing
         if (statusChanged || etaChanged) {
-          let type = "status_change";
-          let title = "";
-          let message = "";
+          const notifType = statusChanged
+            ? data.status === "delayed" ? "delay" : data.status === "delivered" ? "arrival" : "status_change"
+            : "eta_change";
 
-          if (statusChanged && data.status === "delayed") {
-            type = "delay";
-            title = `${s.container_number} — Delay Detected`;
-            message = `Container status changed to delayed. ${
-              data.eta ? "New ETA: " + formatDate(data.eta) : "ETA pending."
-            }`;
-          } else if (statusChanged && data.status === "delivered") {
-            type = "arrival";
-            title = `${s.container_number} — Delivered`;
-            message = `Container has arrived at ${data.destination || "destination"}.`;
-          } else if (statusChanged) {
-            type = "status_change";
-            title = `${s.container_number} — Status Update`;
-            message = `Status changed from ${formatStatus(s.status)} to ${formatStatus(
-              data.status!
-            )}.`;
-          } else if (etaChanged) {
-            type = "eta_change";
-            title = `${s.container_number} — ETA Updated`;
-            const oldEta = s.eta ? formatDate(s.eta) : "TBC";
-            const newEta = formatDate(data.eta!);
-            message = `ETA changed from ${oldEta} to ${newEta}.`;
+          // Check if a notification of this type was already created in the last 10 minutes
+          const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+          const { data: existing } = await supabase
+            .from("shipping_notifications")
+            .select("id")
+            .eq("shipment_id", s.id)
+            .eq("type", notifType)
+            .gte("created_at", tenMinAgo)
+            .limit(1);
+
+          if (existing && existing.length > 0) {
+            console.log(`Skipping duplicate ${notifType} notification for ${s.container_number}`);
+          } else {
+            let type = notifType;
+            let title = "";
+            let message = "";
+
+            // Use the DB destination (what user expects) rather than API's POD
+            const dest = s.destination || data.destination || "destination";
+
+            if (statusChanged && data.status === "delayed") {
+              title = `${s.container_number} — Delay Alert`;
+              message = `Status changed from ${formatStatus(s.status)} to delayed. ${
+                data.eta ? "New ETA: " + formatDate(data.eta) : "ETA pending."
+              }`;
+            } else if (statusChanged && data.status === "delivered") {
+              title = `${s.container_number} — Delivered`;
+              message = `Container has arrived at ${dest}.`;
+            } else if (statusChanged) {
+              title = `${s.container_number} — Status Update`;
+              message = `Status changed from ${formatStatus(s.status)} to ${formatStatus(
+                data.status!
+              )}.`;
+            } else if (etaChanged) {
+              title = `${s.container_number} — ETA Delayed`;
+              const oldEta = s.eta ? formatDate(s.eta) : "TBC";
+              const newEta = formatDate(data.eta!);
+              message = `Arrival pushed back to ${newEta} (was ${oldEta}).`;
+            }
+
+            await supabase.from("shipping_notifications").insert({
+              user_id: s.user_id,
+              shipment_id: s.id,
+              type,
+              title,
+              message,
+              read: false,
+            });
           }
-
-          await supabase.from("shipping_notifications").insert({
-            user_id: s.user_id,
-            shipment_id: s.id,
-            type,
-            title,
-            message,
-            read: false,
-          });
         }
       }
     } catch (err) {
