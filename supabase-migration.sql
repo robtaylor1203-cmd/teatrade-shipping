@@ -220,3 +220,97 @@ CREATE TRIGGER shipping_notify_new_tracking_trigger
 -- 10b. Enable Realtime on the notifications table
 --     (safe to re-run — ignores if already added)
 ALTER PUBLICATION supabase_realtime ADD TABLE public.shipping_notifications;
+
+-- ============================================================
+--  SHIPMENT HISTORY TABLE & RLS
+-- ============================================================
+
+-- 11. Audit / history table — records a snapshot each time a shipment changes
+CREATE TABLE IF NOT EXISTS public.shipment_history (
+    id               uuid            DEFAULT gen_random_uuid() PRIMARY KEY,
+    shipment_id      uuid            NOT NULL REFERENCES public.shipping_shipments(id) ON DELETE CASCADE,
+    status           text,
+    lat              double precision,
+    lng              double precision,
+    eta              timestamptz,
+    origin           text,
+    destination      text,
+    days_transit     integer,
+    changed_at       timestamptz     DEFAULT now() NOT NULL,
+    change_type      text            NOT NULL DEFAULT 'update'
+                                     CHECK (change_type IN ('initial','update'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_shipment_history_shipment_id
+    ON public.shipment_history (shipment_id);
+
+ALTER TABLE public.shipment_history ENABLE ROW LEVEL SECURITY;
+
+-- Users can read history for their own shipments
+DROP POLICY IF EXISTS "history_select_own" ON public.shipment_history;
+CREATE POLICY "history_select_own"
+    ON public.shipment_history FOR SELECT
+    USING (
+        auth.uid() = (
+            SELECT user_id FROM public.shipping_shipments
+            WHERE id = shipment_history.shipment_id
+        )
+    );
+
+-- CRITICAL: postgres role (used by SECURITY DEFINER trigger functions) must
+-- be able to insert. Without this, adding a new container raises an RLS error.
+DROP POLICY IF EXISTS "history_insert_trigger" ON public.shipment_history;
+CREATE POLICY "history_insert_trigger"
+    ON public.shipment_history FOR INSERT
+    TO postgres
+    WITH CHECK (true);
+
+-- Service role (cron edge function) can do everything
+DROP POLICY IF EXISTS "history_all_service" ON public.shipment_history;
+CREATE POLICY "history_all_service"
+    ON public.shipment_history FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+GRANT ALL ON public.shipment_history TO postgres;
+GRANT ALL ON public.shipment_history TO service_role;
+GRANT SELECT ON public.shipment_history TO authenticated;
+
+-- 12. BEFORE UPDATE trigger — saves old row to history before each update
+CREATE OR REPLACE FUNCTION public.shipping_save_history()
+RETURNS trigger AS $$
+BEGIN
+    INSERT INTO public.shipment_history
+        (shipment_id, status, lat, lng, eta, origin, destination, days_transit, change_type)
+    VALUES
+        (OLD.id, OLD.status, OLD.lat, OLD.lng, OLD.eta,
+         OLD.origin, OLD.destination, OLD.days_transit, 'update');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS shipping_save_history_trigger ON public.shipping_shipments;
+CREATE TRIGGER shipping_save_history_trigger
+    BEFORE UPDATE ON public.shipping_shipments
+    FOR EACH ROW
+    EXECUTE FUNCTION public.shipping_save_history();
+
+-- 13. AFTER INSERT trigger — saves initial state to history
+CREATE OR REPLACE FUNCTION public.shipping_save_initial_history()
+RETURNS trigger AS $$
+BEGIN
+    INSERT INTO public.shipment_history
+        (shipment_id, status, lat, lng, eta, origin, destination, days_transit, change_type)
+    VALUES
+        (NEW.id, NEW.status, NEW.lat, NEW.lng, NEW.eta,
+         NEW.origin, NEW.destination, NEW.days_transit, 'initial');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS shipping_save_initial_history_trigger ON public.shipping_shipments;
+CREATE TRIGGER shipping_save_initial_history_trigger
+    AFTER INSERT ON public.shipping_shipments
+    FOR EACH ROW
+    EXECUTE FUNCTION public.shipping_save_initial_history();
