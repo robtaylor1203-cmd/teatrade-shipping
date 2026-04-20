@@ -522,6 +522,13 @@ async function loadShipments() {
         plotShipments();
         updateChart();
         updateAnalytics();
+
+        // If the detail panel is open, refresh it with the latest data
+        // (handles the case where tracking data arrives after the panel was opened)
+        if (currentDetailShipmentId) {
+            const fresh = shipments.find((s) => s.id === currentDetailShipmentId);
+            if (fresh) openDetailPanel(fresh);
+        }
     } catch (err) {
         console.error('Network error loading shipments:', err);
     }
@@ -560,12 +567,14 @@ function renderShipmentList() {
             </div>`;
 
         card.addEventListener('click', () => {
+            // Always look up the live object so we never show stale data
+            const live = shipments.find((sh) => sh.id === s.id) || s;
             if (isMobile()) closeMobileLeftPanel();
-            openDetailPanel(s);
+            openDetailPanel(live);
             // Pan map to marker
-            if (s.lat != null && s.lng != null && map) {
-                map.setView([s.lat, s.lng], 6, { animate: true });
-                const marker = markers[String(s.id)];
+            if (live.lat != null && live.lng != null && map) {
+                map.setView([live.lat, live.lng], 6, { animate: true });
+                const marker = markers[String(live.id)];
                 if (marker) marker.openPopup();
             }
         });
