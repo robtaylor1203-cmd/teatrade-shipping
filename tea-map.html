@@ -3397,22 +3397,29 @@
         }
     });
     </script>
-    
-    <!-- Global header search functionality -->
+
+    <!-- Global header search: single live-suggestion dropdown that searches all
+         indexed pages (titles, descriptions, keywords) and links to the article. -->
     <script type="module">
-    import { articlePool } from '/search-index.js';
-    
+    // Load the generated index from the main domain so the shipping subdomain
+    // can search the full TeaTrade catalogue (learning, reviews, recipes, estates...).
+    import { articlePool } from 'https://teatrade.co.uk/search-index.js';
+
     (function setupGlobalSearch() {
         const searchInputs = document.querySelectorAll('.header-search-bar');
-        
+
         searchInputs.forEach(input => {
+            // Avoid duplicate dropdowns if this ever runs twice.
+            if (input.dataset.searchInit === '1') return;
+            input.dataset.searchInit = '1';
+
             const dropdown = document.createElement('div');
             dropdown.className = 'search-results-dropdown';
-            
+
             const mobileWrapper = input.closest('.mobile-search-wrapper');
             const isMobile = !!mobileWrapper;
             let wrapper;
-            
+
             if (isMobile) {
                 dropdown.style.cssText = `
                     position: relative;
@@ -3422,7 +3429,7 @@
                     width: 100%;
                     max-height: 60vh;
                     overflow-y: auto;
-                    background: white;
+                    background: #ffffff;
                     border-radius: 8px;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                     z-index: 10002;
@@ -3438,7 +3445,7 @@
                     right: 0;
                     max-height: 500px;
                     overflow-y: auto;
-                    background: white;
+                    background: #ffffff;
                     border: 1px solid #ddd;
                     border-top: none;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -3451,30 +3458,54 @@
                     wrapper.appendChild(dropdown);
                 }
             }
-            
+
             input.addEventListener('input', (e) => {
                 const term = e.target.value.toLowerCase().trim();
-                
+
                 if (term === '' || term.length < 2) {
                     dropdown.style.display = 'none';
                     return;
                 }
-                
-                const matches = articlePool.filter(item => 
-                    item.title.toLowerCase().includes(term) || 
-                    (item.desc && item.desc.toLowerCase().includes(term))
-                ).slice(0, 20);
-                
+
+                // Search across title, description AND keywords so pages like the
+                // Iran War analysis (where 'iran' is in keywords) are found.
+                const allMatches = articlePool.filter(item =>
+                    (item.title && item.title.toLowerCase().includes(term)) ||
+                    (item.desc && item.desc.toLowerCase().includes(term)) ||
+                    (item.keywords && item.keywords.toLowerCase().includes(term))
+                );
+
+                // Mix content types so results aren't dominated by estate pages.
+                const url = (item) => item.url || '';
+                const recipes  = allMatches.filter(i => url(i).includes('recipes/'));
+                const learning = allMatches.filter(i => url(i).includes('learning/'));
+                const reviews  = allMatches.filter(i => url(i).includes('reviews/'));
+                const estates  = allMatches.filter(i => url(i).includes('estates/'));
+                const other    = allMatches.filter(i =>
+                    !url(i).includes('recipes/') &&
+                    !url(i).includes('learning/') &&
+                    !url(i).includes('reviews/') &&
+                    !url(i).includes('estates/')
+                );
+                const matches = [...learning, ...reviews, ...recipes, ...estates, ...other].slice(0, 30);
+
                 if (matches.length > 0) {
                     dropdown.innerHTML = matches.map(match => {
-                        const url = '/' + match.url;
-                        const img = match.img.startsWith('/') ? match.img : '/' + match.img;
+                        // Articles live on the main domain; build absolute URLs.
+                        const path = url(match).startsWith('/') ? url(match) : '/' + url(match);
+                        const href = 'https://teatrade.co.uk' + path;
+                        let img = match.img || '/images/learning/tea-estate-general.jpg';
+                        if (!/^https?:\/\//i.test(img)) {
+                            if (!img.startsWith('/')) img = '/' + img;
+                            img = 'https://teatrade.co.uk' + img;
+                        }
+                        const desc = (match.desc || '').substring(0, 100);
                         return `
-                        <a href="#" style="display: flex; gap: 12px; padding: 12px; text-decoration: none; color: #202124; border-bottom: 1px solid #f0f0f0;">
-                            <img src="/images/learning/tea-estate-general.jpg" style="width: 80px; height: 60px; object-fit: cover; border-radius: 4px;" alt="" onerror="this.style.display='none'" width="1081" height="686">
+                        <a href="${href}" style="display: flex; gap: 12px; padding: 12px; text-decoration: none; color: #202124; border-bottom: 1px solid #f0f0f0;">
+                            <img src="${img}" style="width: 80px; height: 60px; object-fit: cover; border-radius: 4px;" alt="" onerror="this.style.display='none'" loading="lazy">
                             <div style="flex: 1;">
                                 <div style="font-weight: 500; font-size: 14px; margin-bottom: 4px;">${match.title}</div>
-                                <div style="font-size: 12px; color: #5f6368; line-height: 1.4;">${(match.desc || '').substring(0, 100)}...</div>
+                                <div style="font-size: 12px; color: #5f6368; line-height: 1.4;">${desc}${desc.length === 100 ? '…' : ''}</div>
                             </div>
                         </a>`;
                     }).join('');
@@ -3484,16 +3515,16 @@
                     dropdown.style.display = 'block';
                 }
             });
-            
+
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     const term = e.target.value.trim();
                     if (term) {
-                        window.location.href = '/learning.html?search=' + encodeURIComponent(term);
+                        window.location.href = 'https://teatrade.co.uk/learning.html?search=' + encodeURIComponent(term);
                     }
                 }
             });
-            
+
             document.addEventListener('click', (e) => {
                 if (wrapper && !wrapper.contains(e.target)) {
                     dropdown.style.display = 'none';
@@ -3502,7 +3533,5 @@
         });
     })();
     </script>
-
-    <script type="module" src="/script.js"></script>
 </body>
 </html>

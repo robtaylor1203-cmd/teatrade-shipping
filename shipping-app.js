@@ -177,16 +177,40 @@ authForm.addEventListener('submit', async (e) => {
 
 async function signOut() {
     stopAutoRefresh();
-    if (notifChannel) { sb.removeChannel(notifChannel); notifChannel = null; }
+    clearPrivateUserState();
     await sb.auth.signOut();
-    currentUser = null;
-    shipments   = [];
-    notifications = [];
-    renderShipmentList();
-    renderNotifications();
-    plotShipments();
     updateAuthUI();
     loadDemoData();
+}
+
+/**
+ * Wipes ALL data tied to the previously-authenticated user from memory and
+ * the DOM. Call this on every transition out of an authenticated session
+ * (explicit sign-out, token expiry, sign-out from another tab, page reload
+ * with no session). This is a security boundary: nothing private should
+ * survive past this call.
+ */
+function clearPrivateUserState() {
+    // Tear down realtime subscription first so no late INSERTs leak in.
+    if (notifChannel) {
+        try { sb.removeChannel(notifChannel); } catch (_) {}
+        notifChannel = null;
+    }
+
+    currentUser   = null;
+    shipments     = [];
+    notifications = [];
+    currentDetailShipmentId = null;
+
+    // Force-close the notifications panel if it's open.
+    notifPanelOpen = false;
+    const panel = document.getElementById('notifPanel');
+    if (panel) panel.classList.add('hidden');
+
+    // Re-render so badges/lists/markers reflect the empty state immediately.
+    try { renderShipmentList(); } catch (_) {}
+    try { renderNotifications(); } catch (_) {}
+    try { plotShipments(); } catch (_) {}
 }
 
 function updateAuthUI() {
@@ -214,6 +238,9 @@ async function onUserLoggedIn(user) {
     await loadShipments();
     loadNotifications();
     subscribeToNotifications();
+    // Sync disclaimer acceptance from the server so users who accepted on
+    // another device / browser aren't prompted again.
+    syncDisclaimerAcceptance();
     // Start live tracking: immediate background refresh + periodic polling
     refreshAllShipments();
     startAutoRefresh();
@@ -232,10 +259,20 @@ sb.auth.onAuthStateChange((_event, session) => {
         $('#resetDesc').textContent = 'Enter your new password below.';
         return;
     }
+
+    // Detect a user-identity change (logout, or switch to a different user).
+    // Anything other than "same authenticated user as before" must purge
+    // private state so one user's data can never appear under another
+    // session — including in the unauthenticated state.
+    const newUserId = session?.user?.id || null;
+    const prevUserId = currentUser?.id || null;
+    if (newUserId !== prevUserId) {
+        clearPrivateUserState();
+    }
+
     if (session?.user) {
         onUserLoggedIn(session.user);
     } else {
-        currentUser = null;
         updateAuthUI();
         loadDemoData();
     }
@@ -383,6 +420,17 @@ function parseContainerLines() {
 trackBtn.addEventListener('click', async () => {
     const lines = parseContainerLines();
     if (!lines.length) return;
+
+    // Gate the very first tracking action behind the Authorised Tracking
+    // Agreement. This is the point at which the visitor actually intends
+    // to track containers, so it's the correct place to surface the
+    // disclaimer — not on page load (which would scare off casual visitors).
+    // If they're already logged in and have accepted previously on this
+    // browser, this is a no-op and the flow continues immediately.
+    if (!isDisclaimerAccepted()) {
+        showDisclaimerModal(() => trackBtn.click());
+        return;
+    }
 
     // If not logged in, show the auth modal
     if (!currentUser) {
@@ -1220,8 +1268,9 @@ function renderNotifications() {
     const empty = $('#notifEmpty');
     const unreadCount = notifications.filter((n) => !n.read).length;
 
-    // Update badges
-    ['notifBadge', 'notifBadgeLoggedOut'].forEach((id) => {
+    // Update badges (only the logged-in bell exists; the logged-out UI
+    // intentionally has no notifications surface).
+    ['notifBadge'].forEach((id) => {
         const badge = document.getElementById(id);
         if (!badge) return;
         if (unreadCount > 0) {
@@ -1791,3 +1840,133 @@ window.shippingApp = {
     deleteShipment,
     toggleMobileLeftPanel
 };
+
+/* ══════════════════════════════════════════════════════════════════
+   FIRST-VISIT AUTHORISED TRACKING DISCLAIMER
+   ──────────────────────────────────────────────────────────────────
+   Shows a one-time modal that the visitor must confirm before using
+   the tracking tool. Acceptance is persisted in localStorage under
+   `shipping_disclaimer_accepted` so it is never shown again on the
+   same browser profile.
+   ══════════════════════════════════════════════════════════════════ */
+
+const DISCLAIMER_KEY = 'shipping_disclaimer_accepted';
+const DISCLAIMER_VERSION = 'v1';
+
+function isDisclaimerAccepted() {
+    try {
+        return window.localStorage.getItem(DISCLAIMER_KEY) === 'true';
+    } catch (_) {
+        // localStorage can be unavailable (private mode, disabled storage).
+        // Fail closed: treat as "not accepted" so the modal still appears.
+        return false;
+    }
+}
+
+function markDisclaimerAccepted() {
+    try {
+        window.localStorage.setItem(DISCLAIMER_KEY, 'true');
+        window.localStorage.setItem(DISCLAIMER_KEY + '_at', new Date().toISOString());
+    } catch (_) {
+        // Silent fail — the modal will reappear next visit if storage is
+        // blocked, which is the safer behaviour.
+    }
+    // Best-effort: if there's a logged-in user, record the acceptance
+    // server-side for audit/legal evidence and cross-device persistence.
+    // We don't await — the UI should never block on this.
+    persistDisclaimerAcceptance();
+}
+
+/**
+ * Inserts the current user's acceptance row in Supabase. Idempotent: the
+ * table has user_id as the primary key, so a second insert will fail
+ * harmlessly (we swallow the duplicate-key error).
+ */
+async function persistDisclaimerAcceptance() {
+    if (!currentUser) return; // anonymous visitors: localStorage only
+    try {
+        await sb.from('shipping_disclaimer_acceptances').insert({
+            user_id: currentUser.id,
+            disclaimer_version: DISCLAIMER_VERSION,
+            user_agent: navigator.userAgent || null
+        });
+    } catch (_) {
+        // Swallow — duplicate-key (already accepted) and transient network
+        // failures shouldn't surface to the user. localStorage still covers
+        // the UX on this device.
+    }
+}
+
+/**
+ * On login, check whether this user has already accepted the disclaimer on
+ * any device. If so, mirror that into localStorage so the modal is skipped
+ * here too. Runs in the background; never blocks the UI.
+ */
+async function syncDisclaimerAcceptance() {
+    if (!currentUser) return;
+    if (isDisclaimerAccepted()) return; // already recorded locally
+    try {
+        const { data, error } = await sb
+            .from('shipping_disclaimer_acceptances')
+            .select('user_id')
+            .eq('user_id', currentUser.id)
+            .maybeSingle();
+        if (error) return;
+        if (data) {
+            try {
+                window.localStorage.setItem(DISCLAIMER_KEY, 'true');
+            } catch (_) {}
+        }
+    } catch (_) {
+        // Ignore — worst case the user is prompted once and we record it then.
+    }
+}
+
+function showDisclaimerModal(onAccept) {
+    const overlay = document.getElementById('disclaimerOverlay');
+    const btn = document.getElementById('disclaimerAccept');
+    if (!overlay || !btn) {
+        // Fail-open: if the DOM nodes aren't there, don't block the user.
+        if (typeof onAccept === 'function') onAccept();
+        return;
+    }
+
+    overlay.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => btn.focus(), 50);
+
+    // Replace-node trick to clear any previous handlers, so each invocation
+    // gets a fresh one-shot callback.
+    const fresh = btn.cloneNode(true);
+    btn.parentNode.replaceChild(fresh, btn);
+    fresh.addEventListener('click', () => {
+        markDisclaimerAccepted();
+        hideDisclaimerModal();
+        if (typeof onAccept === 'function') onAccept();
+    }, { once: true });
+}
+
+function hideDisclaimerModal() {
+    const overlay = document.getElementById('disclaimerOverlay');
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+/**
+ * Gate any authorised-tracking action behind acceptance of the disclaimer.
+ * If the user has already accepted on this browser, `action` runs immediately.
+ * Otherwise, the modal is shown and `action` only runs after they click
+ * "I Confirm & Accept".
+ */
+function requireDisclaimerAcceptance(action) {
+    if (isDisclaimerAccepted()) {
+        action();
+        return;
+    }
+    showDisclaimerModal(action);
+}
+
+// Expose for other handlers that also initiate tracking (e.g. file uploads).
+window.shippingApp = window.shippingApp || {};
+window.shippingApp.requireDisclaimerAcceptance = requireDisclaimerAcceptance;

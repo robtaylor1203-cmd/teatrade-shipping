@@ -266,6 +266,36 @@ DROP POLICY IF EXISTS "history_select_own" ON public.shipment_history;
 DROP POLICY IF EXISTS "history_insert_trigger" ON public.shipment_history;
 DROP POLICY IF EXISTS "history_all_service" ON public.shipment_history;
 
+-- ============================================================
+--  AUTHORISED TRACKING AGREEMENT — acceptance log
+--  One row per user, inserted the first time they accept the
+--  in-app disclaimer. Used for audit/legal evidence and to skip
+--  the modal on subsequent logins / other devices.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.shipping_disclaimer_acceptances (
+    user_id             uuid         PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    accepted_at         timestamptz  NOT NULL DEFAULT now(),
+    disclaimer_version  text         NOT NULL DEFAULT 'v1',
+    user_agent          text
+);
+
+ALTER TABLE public.shipping_disclaimer_acceptances ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "disclaimer_select_own" ON public.shipping_disclaimer_acceptances;
+CREATE POLICY "disclaimer_select_own"
+    ON public.shipping_disclaimer_acceptances FOR SELECT
+    USING (auth.uid() = user_id);
+
+-- Users can insert their own acceptance row (once). They cannot update or
+-- delete it — the record is immutable from the client side.
+DROP POLICY IF EXISTS "disclaimer_insert_own" ON public.shipping_disclaimer_acceptances;
+CREATE POLICY "disclaimer_insert_own"
+    ON public.shipping_disclaimer_acceptances FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+GRANT SELECT, INSERT ON public.shipping_disclaimer_acceptances TO authenticated;
+GRANT ALL           ON public.shipping_disclaimer_acceptances TO service_role;
+
 -- Restrict grants: anon gets nothing, authenticated can read, service_role/postgres can do all
 REVOKE ALL ON public.shipment_history FROM anon;
 GRANT SELECT ON public.shipment_history TO authenticated;
