@@ -360,6 +360,114 @@
             .chart-wrap { height: 260px; }
         }
     </style>
+
+    <!-- TeaTrade global omni-search (palette + header integration).
+         The palette, class, and AI endpoint are all hosted on the main
+         domain so every subdomain stays in lockstep automatically. We ALSO
+         load the main site's canonical search index and republish it as
+         `window.articlePool` using the exact same merge/normalisation as
+         teatrade.co.uk/script.js (url→link, absolutised to the main domain,
+         preserving country/region/elevation/lat/lng/summary). This is what
+         lets the Supabase `omni-answer` edge function ground its reply in
+         the full TeaTrade catalogue and produce the identical voice and
+         layout you see on the main site. -->
+    <script type="module">
+      import { articlePool as searchIndex } from 'https://teatrade.co.uk/search-index.js';
+      const MAIN = 'https://teatrade.co.uk';
+      const abs = (p) => {
+        if (!p) return '';
+        if (/^https?:\/\//i.test(p)) return p;
+        return MAIN + (p.startsWith('/') ? p : '/' + p);
+      };
+      const pool = [];
+      const seen = new Set();
+      for (const item of searchIndex) {
+        const link = abs(item.url);
+        if (seen.has(link)) continue;
+        seen.add(link);
+        const merged = {
+          title: item.title,
+          desc: item.desc || '',
+          link,
+          img: abs(item.img || ''),
+          keywords: item.keywords || '',
+          category: item.category || ''
+        };
+        if (item.country) merged.country = item.country;
+        if (item.region) merged.region = item.region;
+        if (typeof item.lat === 'number') merged.lat = item.lat;
+        if (typeof item.lng === 'number') merged.lng = item.lng;
+        if (typeof item.elevation_m === 'number') merged.elevation_m = item.elevation_m;
+        if (item.summary) merged.summary = item.summary;
+        pool.push(merged);
+      }
+      window.articlePool = pool;
+      console.log('📚 Shipping article pool synced from main domain:', pool.length, 'items');
+
+      // Parity patch: the hosted omni-embed bundle leaves the Sources bento
+      // grid empty when searchPool has no hits, but teatrade.co.uk/script.js
+      // fills any empty slots with learning articles so users always have
+      // a next click. We ALSO force the local fallback to use the main
+      // site's list format whenever we're looking at enumeration/estate
+      // hits — that way shipping visibly matches the main domain even if
+      // Groq rate-limits.
+      const patchOmni = () => {
+        const o = window.omniSearch;
+        if (!o || typeof o.renderBentoSources !== 'function') {
+          return setTimeout(patchOmni, 50);
+        }
+        if (o._shippingPatched) return;
+        o._shippingPatched = true;
+
+        const originalBento = o.renderBentoSources.bind(o);
+        o.renderBentoSources = function(query, precomputed) {
+          let sources = (precomputed && precomputed.length)
+            ? precomputed.slice(0, 4)
+            : this.searchPool(query, 4);
+          if (sources.length < 4 && Array.isArray(window.articlePool)) {
+            const seen = new Set(sources.map(s => s.link));
+            const fill = window.articlePool
+              .filter(a => (a.link || '').includes('/learning/') && !seen.has(a.link))
+              .slice(0, 4 - sources.length)
+              .map(a => (typeof this.decorate === 'function' ? this.decorate(a) : a));
+            sources = sources.concat(fill);
+          }
+          return originalBento(query, sources);
+        };
+
+        const originalMock = o.buildMockResponse && o.buildMockResponse.bind(o);
+        if (originalMock) {
+          o.buildMockResponse = function(query, hits) {
+            hits = hits || [];
+            const allEstates = hits.length >= 2 && hits.every(h =>
+              (h._type === 'Estate') || (h.link || '').includes('/estates/')
+            );
+            if (allEstates) {
+              const fmt = h => {
+                const name = (h.title || '').split('|')[0]
+                  .replace(/Tea Estate.*$/i, '').trim() || h.title;
+                const place = [h.region, h.country].filter(Boolean).join(', ');
+                const elev = (typeof h.elevation_m === 'number') ? ` (${h.elevation_m} m)` : '';
+                return `- **${name}**${place ? ` — ${place}` : ''}${elev}`;
+              };
+              const shown = hits.slice(0, 12);
+              const intro = `Here ${shown.length === 1 ? 'is' : 'are'} ${shown.length} matching tea estate${shown.length === 1 ? '' : 's'} from TeaTrade:`;
+              const more = hits.length > shown.length
+                ? `\n\n…and ${hits.length - shown.length} more. Refine your query for a narrower list.`
+                : '';
+              return intro + '\n' + shown.map(fmt).join('\n') + more;
+            }
+            return originalMock(query, hits);
+          };
+        }
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', patchOmni);
+      } else {
+        patchOmni();
+      }
+    </script>
+    <script defer src="https://teatrade.co.uk/omni-embed.js"></script>
 </head>
 <body>
     <div class="report-container">

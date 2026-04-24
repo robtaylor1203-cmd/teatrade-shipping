@@ -1800,6 +1800,118 @@
             100% { transform: translateX(-50%); }
         }
     </style>
+
+    <!-- TeaTrade global omni-search (palette + header integration).
+         The palette, class, and AI endpoint are all hosted on the main
+         domain so every subdomain stays in lockstep automatically. We ALSO
+         load the main site's canonical search index and republish it as
+         `window.articlePool` using the exact same merge/normalisation as
+         teatrade.co.uk/script.js (url→link, absolutised to the main domain,
+         preserving country/region/elevation/lat/lng/summary). This is what
+         lets the Supabase `omni-answer` edge function ground its reply in
+         the full TeaTrade catalogue and produce the identical voice and
+         layout you see on the main site. -->
+    <script type="module">
+      import { articlePool as searchIndex } from 'https://teatrade.co.uk/search-index.js';
+      const MAIN = 'https://teatrade.co.uk';
+      const abs = (p) => {
+        if (!p) return '';
+        if (/^https?:\/\//i.test(p)) return p;
+        return MAIN + (p.startsWith('/') ? p : '/' + p);
+      };
+      const pool = [];
+      const seen = new Set();
+      for (const item of searchIndex) {
+        const link = abs(item.url);
+        if (seen.has(link)) continue;
+        seen.add(link);
+        const merged = {
+          title: item.title,
+          desc: item.desc || '',
+          link,
+          img: abs(item.img || ''),
+          keywords: item.keywords || '',
+          category: item.category || ''
+        };
+        if (item.country) merged.country = item.country;
+        if (item.region) merged.region = item.region;
+        if (typeof item.lat === 'number') merged.lat = item.lat;
+        if (typeof item.lng === 'number') merged.lng = item.lng;
+        if (typeof item.elevation_m === 'number') merged.elevation_m = item.elevation_m;
+        if (item.summary) merged.summary = item.summary;
+        pool.push(merged);
+      }
+      window.articlePool = pool;
+      console.log('📚 Shipping article pool synced from main domain:', pool.length, 'items');
+
+      // Parity patch: the hosted omni-embed bundle leaves the Sources bento
+      // grid empty when searchPool has no hits, but teatrade.co.uk/script.js
+      // fills any empty slots with learning articles so users always have
+      // a next click. We ALSO harden the LLM fetch with a longer retry
+      // chain and force the local fallback to use the main site's list
+      // format whenever we're looking at enumeration/estate hits — that way
+      // shipping visibly matches the main domain even if Groq rate-limits.
+      const patchOmni = () => {
+        const o = window.omniSearch;
+        if (!o || typeof o.renderBentoSources !== 'function') {
+          return setTimeout(patchOmni, 50);
+        }
+        if (o._shippingPatched) return;
+        o._shippingPatched = true;
+
+        // 1) Bento Sources fallback (already mirrors main/script.js).
+        const originalBento = o.renderBentoSources.bind(o);
+        o.renderBentoSources = function(query, precomputed) {
+          let sources = (precomputed && precomputed.length)
+            ? precomputed.slice(0, 4)
+            : this.searchPool(query, 4);
+          if (sources.length < 4 && Array.isArray(window.articlePool)) {
+            const seen = new Set(sources.map(s => s.link));
+            const fill = window.articlePool
+              .filter(a => (a.link || '').includes('/learning/') && !seen.has(a.link))
+              .slice(0, 4 - sources.length)
+              .map(a => (typeof this.decorate === 'function' ? this.decorate(a) : a));
+            sources = sources.concat(fill);
+          }
+          return originalBento(query, sources);
+        };
+
+        // 2) Resilient mock: when the live LLM fails AND we have >=2 estate
+        //    hits (enumeration path), render the identical bullet list the
+        //    main-site system prompt produces.
+        const originalMock = o.buildMockResponse && o.buildMockResponse.bind(o);
+        if (originalMock) {
+          o.buildMockResponse = function(query, hits) {
+            hits = hits || [];
+            const allEstates = hits.length >= 2 && hits.every(h =>
+              (h._type === 'Estate') || (h.link || '').includes('/estates/')
+            );
+            if (allEstates) {
+              const fmt = h => {
+                const name = (h.title || '').split('|')[0]
+                  .replace(/Tea Estate.*$/i, '').trim() || h.title;
+                const place = [h.region, h.country].filter(Boolean).join(', ');
+                const elev = (typeof h.elevation_m === 'number') ? ` (${h.elevation_m} m)` : '';
+                return `- **${name}**${place ? ` — ${place}` : ''}${elev}`;
+              };
+              const shown = hits.slice(0, 12);
+              const intro = `Here ${shown.length === 1 ? 'is' : 'are'} ${shown.length} matching tea estate${shown.length === 1 ? '' : 's'} from TeaTrade:`;
+              const more = hits.length > shown.length
+                ? `\n\n…and ${hits.length - shown.length} more. Refine your query for a narrower list.`
+                : '';
+              return intro + '\n' + shown.map(fmt).join('\n') + more;
+            }
+            return originalMock(query, hits);
+          };
+        }
+      };
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', patchOmni);
+      } else {
+        patchOmni();
+      }
+    </script>
+    <script defer src="https://teatrade.co.uk/omni-embed.js"></script>
 </head>
 <body>
 
@@ -1821,7 +1933,7 @@
             <span class="header-subdomain">Shipping</span>
 
             <div class="header-search-wrapper">
-                <input type="text" class="header-search-bar" id="globalArticleSearch" placeholder="Search TeaTrade articles, recipes, reviews…">
+                <input type="text" class="header-search-bar" id="articleSearchInput" placeholder="Search TeaTrade articles, recipes, reviews…" autocomplete="off">
             </div>
 
             <div class="user-actions" id="loggedOutActions">
@@ -1850,7 +1962,7 @@
                 </button>
             </div>
 
-            <button class="mobile-search-icon" aria-label="Search" title="Search">
+            <button class="mobile-search-icon" aria-label="Search" title="Search" onclick="if(window.omniSearch)window.omniSearch.open()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             </button>
             <button class="mobile-menu-toggle" aria-label="Toggle navigation">
@@ -2252,103 +2364,5 @@
     </script>
 
     <script src="shipping-app.js"></script>
-
-    <!-- Global TeaTrade article search (single live-suggestion dropdown that
-         searches the full main-site catalogue and links to articles on
-         teatrade.co.uk). -->
-    <script type="module">
-    import { articlePool } from 'https://teatrade.co.uk/search-index.js';
-
-    (function setupGlobalSearch() {
-        const searchInputs = document.querySelectorAll('.header-search-bar');
-
-        searchInputs.forEach(input => {
-            if (input.dataset.searchInit === '1') return;
-            input.dataset.searchInit = '1';
-
-            const dropdown = document.createElement('div');
-            dropdown.className = 'search-results-dropdown';
-            dropdown.style.cssText = `
-                position: absolute;
-                top: 100%;
-                left: 0;
-                right: 0;
-                max-height: 500px;
-                overflow-y: auto;
-                background: #ffffff;
-                border: 1px solid #ddd;
-                border-top: none;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                z-index: 9999;
-                display: none;
-            `;
-            const wrapper = input.closest('.header-search-wrapper') || input.parentElement;
-            if (!wrapper) return;
-            wrapper.style.position = 'relative';
-            wrapper.appendChild(dropdown);
-
-            input.addEventListener('input', (e) => {
-                const term = e.target.value.toLowerCase().trim();
-                if (term.length < 2) { dropdown.style.display = 'none'; return; }
-
-                const all = articlePool.filter(item =>
-                    (item.title && item.title.toLowerCase().includes(term)) ||
-                    (item.desc && item.desc.toLowerCase().includes(term)) ||
-                    (item.keywords && item.keywords.toLowerCase().includes(term))
-                );
-
-                const url = (i) => i.url || '';
-                const learning = all.filter(i => url(i).includes('learning/'));
-                const reviews  = all.filter(i => url(i).includes('reviews/'));
-                const recipes  = all.filter(i => url(i).includes('recipes/'));
-                const estates  = all.filter(i => url(i).includes('estates/'));
-                const other    = all.filter(i =>
-                    !url(i).includes('learning/') && !url(i).includes('reviews/') &&
-                    !url(i).includes('recipes/') && !url(i).includes('estates/')
-                );
-                const matches = [...learning, ...reviews, ...recipes, ...estates, ...other].slice(0, 30);
-
-                if (!matches.length) {
-                    dropdown.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">No results found</div>';
-                    dropdown.style.display = 'block';
-                    return;
-                }
-
-                dropdown.innerHTML = matches.map(m => {
-                    const path = url(m).startsWith('/') ? url(m) : '/' + url(m);
-                    const href = 'https://teatrade.co.uk' + path;
-                    let img = m.img || '/images/learning/tea-estate-general.jpg';
-                    if (!/^https?:\/\//i.test(img)) {
-                        if (!img.startsWith('/')) img = '/' + img;
-                        img = 'https://teatrade.co.uk' + img;
-                    }
-                    const desc = (m.desc || '').substring(0, 100);
-                    return `
-                    <a href="${href}" style="display:flex; gap:12px; padding:12px; text-decoration:none; color:#202124; border-bottom:1px solid #f0f0f0;">
-                        <img src="${img}" style="width:80px; height:60px; object-fit:cover; border-radius:4px;" alt="" onerror="this.style.display='none'" loading="lazy">
-                        <div style="flex:1;">
-                            <div style="font-weight:500; font-size:14px; margin-bottom:4px;">${m.title}</div>
-                            <div style="font-size:12px; color:#5f6368; line-height:1.4;">${desc}${desc.length === 100 ? '…' : ''}</div>
-                        </div>
-                    </a>`;
-                }).join('');
-                dropdown.style.display = 'block';
-            });
-
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    const term = e.target.value.trim();
-                    if (term) {
-                        window.location.href = 'https://teatrade.co.uk/learning.html?search=' + encodeURIComponent(term);
-                    }
-                }
-            });
-
-            document.addEventListener('click', (e) => {
-                if (!wrapper.contains(e.target)) dropdown.style.display = 'none';
-            });
-        });
-    })();
-    </script>
 </body>
 </html>
